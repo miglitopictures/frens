@@ -1,0 +1,18 @@
+/* Global styles. Keep it small; each toy styles its own UI. */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f4f1ea;
+  color: #1a1a1a;
+}
+
+#app {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
