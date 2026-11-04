@@ -13,6 +13,13 @@ Things we decided to do later. Most important first.
   without TURN if the fetch fails.
   Seen on: 2026-11-04, first Wi-Fi failed, shared 5G worked.
 
+## Look and feel
+
+- [ ] Refine the visual style of the whole platform and all toys together.
+
 ## Toys
 
-- [ ] Gartic clone
+- [x] Gartic clone (themes, custom words, choose 1 of 3, hints, scores)
+- [x] Worms clone (teams of 3, wind, bazooka, destructible terrain)
+- [ ] Gartic: paint bucket, undo
+- [ ] Worms: more weapons (grenade with bounce), fall damage, gravestones
