@@ -46,7 +46,8 @@ works exactly like a friend's screen, and there is never an `if (isHost)` buried
 drawing code.
 
 A toy with no rules (e.g. a shared canvas) can skip `host`. Then the platform
-uses a default host that **forwards every client message to all clients**.
+uses a default host that **forwards every client message to all clients**,
+keeping the original sender as `fromId`. See `src/toys/cursors/` for an example.
 
 ### `host(ctx)`
 
@@ -67,7 +68,7 @@ uses a default host that **forwards every client message to all clients**.
 | `ctx.me` | This player `{ id, name, isHost }` |
 | `ctx.players` | Current players |
 | `ctx.send(type, data)` | Send to the host |
-| `ctx.on(type, (data) => {})` | Receive a message from the host |
+| `ctx.on(type, (data, fromId) => {})` | Receive a message from the host. `fromId` is who originally sent it (the host, or the friend whose message the host forwarded) |
 | `ctx.onPlayersChange((players) => {})` | Someone joined or left |
 
 ### `stop()`

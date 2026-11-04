@@ -46,6 +46,7 @@ frens/
     lobby/room-view.js player list, link, toy picker, start button
     toys/
       registry.js      list of all toys
+      runner.js        starts a toy's halves and builds their ctx
       _template/       copy this to start a new toy
       cursors/         test toy: everyone sees everyone's mouse
       gartic/
@@ -93,8 +94,13 @@ frens/
 ### Signaling server
 
 - v1 uses the free public PeerJS server (`0.peerjs.com`).
-- If it becomes unreliable, run our own (`npx peerjs --port 9000`) and change
-  one config line in `net/room.js`.
+- If it becomes unreliable, run our own (`npx peer --port 9000`) and create a
+  `.env.local` file:
+  ```
+  VITE_PEER_HOST=localhost
+  VITE_PEER_PORT=9000
+  ```
+  (Optional: `VITE_PEER_SECURE=true`, `VITE_PEER_PATH=/`.)
 - Known limitation: some networks (mobile 4G, corporate) block direct WebRTC and
   need a TURN server. Not handled in v1.
 
@@ -103,11 +109,14 @@ frens/
 Every message on the wire is a plain object:
 
 ```js
-{ kind: 'sys', type: 'welcome', data: { ... } }          // platform message
-{ kind: 'toy', toyId: 'gartic', type: 'stroke', data: {...} } // toy message
+{ kind: 'sys', type: 'welcome', data: { ... } }                          // platform message
+{ kind: 'toy', toyId: 'gartic', type: 'stroke', data: {...}, from: 'id' } // toy message
 ```
 
 Toy messages carry `toyId`, so messages from a toy that already stopped are ignored.
+`from` is the original author, so it survives when the host forwards a message.
+
+PeerJS connections use `serialization: 'json'`, so every message must be plain JSON.
 
 ### Platform (`sys`) messages
 

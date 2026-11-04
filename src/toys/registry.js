@@ -2,9 +2,10 @@
 // To add a toy: create src/toys/<id>/index.js and add one import + one entry here.
 // See docs/TOYS.md.
 
+import cursors from './cursors/index.js'
+
 export const toys = [
-  // gartic,
-  // worms,
+  cursors,
 ]
 
 export function findToy(id) {

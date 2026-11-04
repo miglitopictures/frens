@@ -47,7 +47,7 @@ export default {
     // ctx.me                          -> { id, name, isHost }
     // ctx.players                     -> [{ id, name, isHost }]
     // ctx.send(type, data)            -> send to the host
-    // ctx.on(type, (data) => {})      -> receive from the host
+    // ctx.on(type, (data, fromId) => {}) -> receive from the host (fromId = original sender)
     // ctx.onPlayersChange((players) => {})
 
     ctx.root.innerHTML = `
