@@ -14,7 +14,7 @@ import {
   SEND_STROKE_EVERY_MS,
   MAX_CHAT_LENGTH,
 } from './constants.js'
-import { THEMES } from './words.js'
+import { THEMES, normalize } from './words.js'
 
 export function garticClient(ctx) {
   ctx.root.innerHTML = `
@@ -34,11 +34,17 @@ export function garticClient(ctx) {
       }
       .gartic-board.can-draw canvas { cursor: crosshair; }
       .gartic-overlay {
-        position: absolute; inset: 0; display: flex; flex-direction: column; gap: 12px;
+        position: absolute; inset: 0; display: flex;
         align-items: center; justify-content: center; text-align: center;
-        background: rgba(255, 255, 255, 0.9); border-radius: 8px; font-size: 1.2rem;
+        border-radius: 8px; font-size: 1.2rem;
       }
-      .gartic-overlay ol { text-align: left; margin: 0; }
+      .gartic-overlay.dim { background: rgba(255, 255, 255, 0.9); }
+      .gartic-card {
+        display: flex; flex-direction: column; gap: 10px; align-items: center;
+        padding: 16px 20px; background: #fff; border: 2px solid #1a1a1a; border-radius: 8px;
+      }
+      .gartic-card p { margin: 0; }
+      .gartic-card ol { text-align: left; margin: 0; }
       .gartic-choices { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
       .gartic-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
       .gartic-tools button { padding: 6px 10px; }
@@ -338,7 +344,28 @@ export function garticClient(ctx) {
     renderPlayers()
   }
 
+  // Downloads what is on the canvas as a PNG.
+  // Remembers the last finished turn so the final drawing can be saved too.
+  let lastTurn = { word: null, drawer: '' }
+
+  function saveDrawing() {
+    const name = normalize(`${lastTurn.word || 'desenho'} ${lastTurn.drawer}`).replace(/[^a-z0-9]+/g, '-')
+    const link = document.createElement('a')
+    link.download = `frens-gartic-${name}.png`
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
+
+  function saveButton(parent) {
+    const button = document.createElement('button')
+    button.textContent = 'Salvar desenho'
+    button.addEventListener('click', saveDrawing)
+    parent.append(button)
+  }
+
   // The overlay only rebuilds when its content changes, so buttons keep working.
+  // While choosing it hides the canvas; after a turn it is a small card so the
+  // drawing stays visible.
   let overlayKey = ''
   function renderOverlay() {
     const overlay = $('.gartic-overlay')
@@ -347,11 +374,20 @@ export function garticClient(ctx) {
     if (key === overlayKey) return
     overlayKey = key
     overlay.innerHTML = ''
+    overlay.classList.toggle('dim', state.phase === 'choosing')
+
+    if (state.phase === 'between') {
+      lastTurn = { word: state.word, drawer: nameOf(state.drawerId) }
+    }
+
+    const card = document.createElement('div')
+    card.className = 'gartic-card'
+    overlay.append(card)
 
     const text = (t, tag = 'p') => {
       const el = document.createElement(tag)
       el.textContent = t
-      overlay.append(el)
+      card.append(el)
       return el
     }
 
@@ -365,12 +401,15 @@ export function garticClient(ctx) {
         button.addEventListener('click', () => ctx.send('choose', { index }))
         row.append(button)
       })
-      overlay.append(row)
+      card.append(row)
     } else if (state.phase === 'choosing') {
       text(`${nameOf(state.drawerId)} está escolhendo uma palavra...`)
     } else if (state.phase === 'between') {
       text(state.word ? 'A palavra era' : 'Turno cancelado')
-      if (state.word) text(state.word, 'strong')
+      if (state.word) {
+        text(state.word, 'strong')
+        saveButton(card)
+      }
     } else if (state.phase === 'over') {
       text('Fim de jogo!', 'strong')
       const list = document.createElement('ol')
@@ -379,12 +418,13 @@ export function garticClient(ctx) {
         li.textContent = `${p.name} — ${p.score} pontos`
         list.append(li)
       }
-      overlay.append(list)
+      card.append(list)
+      if (lastTurn.word) saveButton(card)
       if (ctx.me.isHost) {
         const again = document.createElement('button')
         again.textContent = 'Jogar de novo'
         again.addEventListener('click', () => ctx.send('again', {}))
-        overlay.append(again)
+        card.append(again)
       }
     }
   }

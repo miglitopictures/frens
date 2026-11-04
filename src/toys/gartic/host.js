@@ -134,15 +134,17 @@ export function garticHost(ctx) {
     game.word = null
     game.revealed = []
     game.guessed = [] // player ids, in the order they guessed
-    game.strokes = []
-    ctx.send('clear', {})
 
     if (!nextDrawer()) {
+      // Game over. The last drawing stays on screen so it can be saved.
       game.phase = 'over'
       game.drawerId = null
       sendState()
       return
     }
+
+    game.strokes = []
+    ctx.send('clear', {})
 
     game.phase = 'choosing'
     game.choices = pickChoices()
