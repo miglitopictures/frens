@@ -1,23 +1,35 @@
 // Host half of Worms: owns the game state and runs the physics.
 //
 // Messages
-//   client -> host:  hi {}             (just mounted, send me the game)
+//   client -> host:  hi {}              (just mounted, send me the game)
 //                    start { turnTime } (host's client only)
-//                    input { left, right }
+//                    input { left, right, up, down }
 //                    jump {}
-//                    again {}          (host's client only: back to setup)
-//   host -> client:  setup {}          (show the setup screen)
+//                    charge {}          (Space pressed: start charging)
+//                    fire {}            (Space released: shoot)
+//                    again {}           (host's client only: back to setup)
+//   host -> client:  setup {}           (show the setup screen)
 //                    game { seed, craters, teams, turnTime }   (static info)
-//                    state { phase, worms, activeWormId, timeLeft, wind, winner }
+//                    state { phase, worms, activeWormId, timeLeft, wind,
+//                            shot, charge, fired, winner }
+//                    boom { x, y, r }   (an explosion: carve the terrain)
+//
+// A turn:  move/aim  ->  hold Space (charge)  ->  release (shot flies)
+//          ->  explosion  ->  RETREAT_TIME seconds to run  ->  next turn
 
 import { createTerrain } from './terrain.js'
-import { stepWorm, jump, collides } from './physics.js'
+import { stepWorm, jump, collides, stepProjectile, explode } from './physics.js'
 import {
   WORLD_W,
   WATER_Y,
   WORMS_PER_TEAM,
   WORM_RADIUS,
   WIND_MAX,
+  AIM_SPEED,
+  CHARGE_TIME,
+  MAX_SHOT_SPEED,
+  RETREAT_TIME,
+  EXPLOSION_RADIUS,
   TURN_TIMES,
   DEFAULT_TURN_TIME,
   TICK,
@@ -25,9 +37,11 @@ import {
   TEAM_COLORS,
 } from './constants.js'
 
+const NO_INPUT = { left: false, right: false, up: false, down: false }
+
 export function wormsHost(ctx) {
   let game = null // null = setup screen
-  let input = { left: false, right: false }
+  let input = NO_INPUT
   let loop = null
 
   function isHostPlayer(id) {
@@ -73,6 +87,7 @@ export function wormsHost(ctx) {
           hp: 100,
           alive: true,
           facing: Math.random() < 0.5 ? -1 : 1,
+          aim: -0.4, // radians: 0 = straight ahead, negative = up
         })
       }
     })
@@ -89,6 +104,9 @@ export function wormsHost(ctx) {
       activeWormId: null,
       turnEndsAt: 0,
       wind: 0,
+      chargeStartedAt: null, // set while Space is held
+      fired: false, // already shot this turn?
+      shot: null, // the projectile in the air
       winner: null,
     }
   }
@@ -114,6 +132,11 @@ export function wormsHost(ctx) {
 
   function startNextTurn() {
     const teams = game.teams
+    game.chargeStartedAt = null
+    game.fired = false
+    game.shot = null
+    input = NO_INPUT
+
     for (let i = 1; i <= teams.length; i++) {
       const teamIndex = (game.turnTeam + i) % teams.length
       const worm = nextWormOf(teamIndex)
@@ -122,7 +145,6 @@ export function wormsHost(ctx) {
         game.activeWormId = worm.id
         game.turnEndsAt = performance.now() + game.turnTime * 1000
         game.wind = Math.round((Math.random() * 2 - 1) * WIND_MAX)
-        input = { left: false, right: false }
         return
       }
     }
@@ -152,17 +174,61 @@ export function wormsHost(ctx) {
       game.phase = 'over'
       game.winner = aliveTeams.length === 1 ? aliveTeams[0].name : null
       game.activeWormId = null
+      game.shot = null
     }
+  }
+
+  // --- shooting ---
+
+  function chargeAmount() {
+    if (game.chargeStartedAt === null) return null
+    const seconds = (performance.now() - game.chargeStartedAt) / 1000
+    return Math.min(1, seconds / CHARGE_TIME)
+  }
+
+  function fire() {
+    const worm = activeWorm()
+    const power = Math.max(0.05, chargeAmount())
+    const dirX = Math.cos(worm.aim) * worm.facing
+    const dirY = Math.sin(worm.aim)
+    game.shot = {
+      x: worm.x + dirX * (WORM_RADIUS + 3),
+      y: worm.y + dirY * (WORM_RADIUS + 3),
+      vx: dirX * power * MAX_SHOT_SPEED,
+      vy: dirY * power * MAX_SHOT_SPEED,
+      age: 0,
+      ownerId: worm.id,
+    }
+    game.fired = true
+    game.chargeStartedAt = null
+  }
+
+  // After the shot is over, the shooter gets a few seconds to run away.
+  function startRetreat() {
+    game.shot = null
+    game.turnEndsAt = performance.now() + RETREAT_TIME * 1000
   }
 
   // --- simulation ---
 
   function step(dt) {
     if (game.phase !== 'playing') return
+    const active = activeWorm()
 
+    // Aiming (before shooting only).
+    if (active && active.alive && !game.fired) {
+      const turn = (input.down ? 1 : 0) - (input.up ? 1 : 0)
+      active.aim = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, active.aim + turn * AIM_SPEED * dt))
+    }
+
+    // Holding Space too long fires at full power.
+    if (game.chargeStartedAt !== null && chargeAmount() >= 1) fire()
+
+    // Worms. The active one can't walk while charging or while its shot flies.
+    const frozen = game.chargeStartedAt !== null || game.shot !== null
     for (const worm of game.worms) {
       if (!worm.alive) continue
-      const wormInput = worm.id === game.activeWormId ? input : {}
+      const wormInput = worm.id === game.activeWormId && !frozen ? input : NO_INPUT
       stepWorm(game.terrain, worm, wormInput, dt)
       if (worm.y > WATER_Y) {
         worm.alive = false
@@ -170,12 +236,27 @@ export function wormsHost(ctx) {
       }
     }
 
+    // The projectile.
+    if (game.shot) {
+      const result = stepProjectile(game.terrain, game.shot, game.wind, game.worms, dt)
+      if (result === 'lost') {
+        startRetreat()
+      } else if (result) {
+        explode(game.terrain, game.worms, result.x, result.y)
+        const crater = { x: Math.round(result.x), y: Math.round(result.y), r: EXPLOSION_RADIUS }
+        game.craters.push(crater)
+        ctx.send('boom', crater)
+        startRetreat()
+      }
+    }
+
     checkWinner()
     if (game.phase !== 'playing') return
 
+    // Next turn when the active worm died, or time is up (and nothing is flying).
     const worm = activeWorm()
-    const turnOver = !worm || !worm.alive || performance.now() >= game.turnEndsAt
-    if (turnOver) startNextTurn()
+    const timeUp = performance.now() >= game.turnEndsAt && !game.shot
+    if (!worm || !worm.alive || timeUp) startNextTurn()
   }
 
   function stateMessage() {
@@ -191,10 +272,14 @@ export function wormsHost(ctx) {
         hp: w.hp,
         alive: w.alive,
         facing: w.facing,
+        aim: Math.round(w.aim * 100) / 100,
       })),
       activeWormId: game.activeWormId,
       timeLeft: Math.max(0, Math.ceil((game.turnEndsAt - performance.now()) / 1000)),
       wind: game.wind,
+      shot: game.shot ? { x: round(game.shot.x), y: round(game.shot.y) } : null,
+      charge: chargeAmount(),
+      fired: game.fired,
       winner: game.winner,
     }
   }
@@ -260,12 +345,30 @@ export function wormsHost(ctx) {
 
   ctx.on('input', (data, fromId) => {
     if (!isActivePlayer(fromId)) return
-    input = { left: Boolean(data.left), right: Boolean(data.right) }
+    input = {
+      left: Boolean(data.left),
+      right: Boolean(data.right),
+      up: Boolean(data.up),
+      down: Boolean(data.down),
+    }
   })
 
   ctx.on('jump', (data, fromId) => {
     if (!isActivePlayer(fromId)) return
+    if (game.chargeStartedAt !== null || game.shot) return
     jump(game.terrain, activeWorm())
+  })
+
+  ctx.on('charge', (data, fromId) => {
+    if (!isActivePlayer(fromId)) return
+    if (game.fired || game.chargeStartedAt !== null) return
+    game.chargeStartedAt = performance.now()
+  })
+
+  ctx.on('fire', (data, fromId) => {
+    if (!isActivePlayer(fromId)) return
+    if (game.chargeStartedAt === null) return
+    fire()
   })
 
   // Someone left: their worms are out of the game.

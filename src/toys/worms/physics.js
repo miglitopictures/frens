@@ -4,6 +4,8 @@
 // around that circle against the terrain mask.
 
 import {
+  WORLD_W,
+  WATER_Y,
   WORM_RADIUS,
   GRAVITY,
   MAX_FALL_SPEED,
@@ -11,6 +13,11 @@ import {
   MAX_CLIMB,
   JUMP_VY,
   JUMP_VX,
+  WIND_ACCEL,
+  EXPLOSION_RADIUS,
+  DAMAGE_RADIUS,
+  MAX_DAMAGE,
+  KNOCKBACK,
 } from './constants.js'
 
 const R = WORM_RADIUS
@@ -113,4 +120,62 @@ export function jump(terrain, worm) {
   if (!isOnGround(terrain, worm)) return
   worm.vy = -JUMP_VY
   worm.vx = worm.facing * JUMP_VX
+}
+
+// --- projectiles and explosions ---
+
+// Moves a projectile one tick. Gravity pulls it down, wind pushes it sideways.
+// Returns:
+//   null        still flying
+//   'lost'      left the map or fell in the water
+//   { x, y }    hit the terrain or a worm: explode here
+export function stepProjectile(terrain, shot, wind, worms, dt) {
+  shot.vx += wind * WIND_ACCEL * dt
+  shot.vy += GRAVITY * dt
+  shot.age += dt
+
+  // Move in small steps (2 px) so fast shots don't pass through thin walls.
+  const distance = Math.hypot(shot.vx, shot.vy) * dt
+  const steps = Math.max(1, Math.ceil(distance / 2))
+
+  for (let i = 0; i < steps; i++) {
+    shot.x += (shot.vx * dt) / steps
+    shot.y += (shot.vy * dt) / steps
+
+    if (shot.x < 0 || shot.x >= WORLD_W || shot.y > WATER_Y) return 'lost'
+    if (shot.y >= 0 && terrain.isSolid(shot.x, shot.y)) return { x: shot.x, y: shot.y }
+
+    for (const worm of worms) {
+      if (!worm.alive) continue
+      // Don't explode on the shooter right as it leaves the barrel.
+      if (worm.id === shot.ownerId && shot.age < 0.2) continue
+      if (Math.hypot(worm.x - shot.x, worm.y - shot.y) < WORM_RADIUS + 2) {
+        return { x: shot.x, y: shot.y }
+      }
+    }
+  }
+  return null
+}
+
+// Opens a crater and hurts/pushes the worms nearby.
+// Closer to the center = more damage and a stronger push.
+export function explode(terrain, worms, x, y) {
+  terrain.carve(x, y, EXPLOSION_RADIUS)
+
+  for (const worm of worms) {
+    if (!worm.alive) continue
+    const dx = worm.x - x
+    const dy = worm.y - y
+    const distance = Math.hypot(dx, dy)
+    if (distance >= DAMAGE_RADIUS) continue
+
+    const strength = 1 - distance / DAMAGE_RADIUS
+    worm.hp = Math.max(0, worm.hp - Math.round(MAX_DAMAGE * strength))
+    if (worm.hp === 0) worm.alive = false
+
+    // Push away from the center, and always a bit upwards so it flies.
+    const length = distance || 1
+    worm.vx += (dx / length) * KNOCKBACK * strength
+    worm.vy = Math.min((dy / length) * KNOCKBACK * strength, 0) - 150 * strength
+  }
 }

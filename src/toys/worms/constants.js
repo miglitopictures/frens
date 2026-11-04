@@ -15,7 +15,20 @@ export const MAX_CLIMB = 2 // pixels up for each pixel forward (~63° slopes)
 export const JUMP_VY = 200
 export const JUMP_VX = 80
 
-export const WIND_MAX = 100 // strongest wind (used by projectiles)
+export const WIND_MAX = 100 // strongest wind
+export const WIND_ACCEL = 1.5 // projectile sideways acceleration per wind unit (px/s²)
+
+// Aiming and shooting
+export const AIM_SPEED = 1.6 // radians per second while holding ↑ or ↓
+export const CHARGE_TIME = 1.2 // seconds holding Space to reach full power (fires by itself)
+export const MAX_SHOT_SPEED = 650 // px/s at full power
+export const RETREAT_TIME = 3 // seconds to run away after the explosion
+
+// Explosion (bazooka)
+export const EXPLOSION_RADIUS = 32 // hole in the terrain
+export const DAMAGE_RADIUS = 50 // worms closer than this get hurt
+export const MAX_DAMAGE = 50 // at the center
+export const KNOCKBACK = 320 // px/s push at the center
 
 export const TURN_TIMES = [15, 30, 45, 60] // seconds, the host picks one
 export const DEFAULT_TURN_TIME = 30
