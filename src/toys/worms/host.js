@@ -5,8 +5,8 @@
 //                    start { turnTime } (host's client only)
 //                    input { left, right, up, down }
 //                    jump {}
-//                    charge {}          (Space pressed: start charging)
-//                    fire {}            (Space released: shoot)
+//                    charge {}          (Ⓐ pressed: start charging)
+//                    fire {}            (Ⓐ released: shoot)
 //                    again {}           (host's client only: back to setup)
 //   host -> client:  setup {}           (show the setup screen)
 //                    game { seed, craters, teams, turnTime }   (static info)
@@ -14,7 +14,7 @@
 //                            shot, charge, fired, winner }
 //                    boom { x, y, r }   (an explosion: carve the terrain)
 //
-// A turn:  move/aim  ->  hold Space (charge)  ->  release (shot flies)
+// A turn:  move/aim  ->  hold Ⓐ (charge)  ->  release (shot flies)
 //          ->  explosion  ->  RETREAT_TIME seconds to run  ->  next turn
 
 import { createTerrain } from './terrain.js'
@@ -34,8 +34,8 @@ import {
   DEFAULT_TURN_TIME,
   TICK,
   SEND_EVERY_MS,
-  TEAM_COLORS,
 } from './constants.js'
+import { playerColorName } from '../../hw/palette.js'
 
 const NO_INPUT = { left: false, right: false, up: false, down: false }
 
@@ -65,10 +65,10 @@ export function wormsHost(ctx) {
     const seed = Math.floor(Math.random() * 2 ** 31)
     const terrain = createTerrain(seed)
 
-    const teams = ctx.players.map((player, i) => ({
+    const teams = ctx.players.map((player) => ({
       playerId: player.id,
       name: player.name,
-      color: TEAM_COLORS[i % TEAM_COLORS.length],
+      color: playerColorName(player.color), // palette name, e.g. 'sky'
       next: 0, // which of its worms plays next
     }))
 
