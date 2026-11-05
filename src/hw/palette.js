@@ -47,6 +47,19 @@ export const PALETTE = {
 // Player colors in join order. Player 1 is always coral, player 2 sky, etc.
 export const PLAYER_COLORS = ['coral', 'sky', 'amber', 'mint', 'violet', 'pink']
 
+// Name of a player's color, for drawing on the screen: playerColorName(player.color) -> 'sky'
+export function playerColorName(index) {
+  return PLAYER_COLORS[index % PLAYER_COLORS.length]
+}
+
+// Hex of a player's color, for the console's CSS.
 export function playerColor(index) {
-  return PALETTE[PLAYER_COLORS[index % PLAYER_COLORS.length]]
+  return PALETTE[playerColorName(index)]
+}
+
+// [r, g, b] of a palette color, for pixel buffers (ImageData).
+export function rgb(name) {
+  const hex = PALETTE[name]
+  if (!hex) throw new Error(`"${name}" is not an FR-6 palette color`)
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16))
 }

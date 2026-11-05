@@ -15,7 +15,9 @@ export function renderRoom(app, room, { onExit }) {
       <header class="status">
         <span class="chip">Sala <strong class="code"></strong></span>
         <span class="slots"></span>
+        <strong class="toy-name"></strong>
         <span class="spacer"></span>
+        <button class="btn small back">Voltar ao lobby</button>
         <button class="btn small copy host-only">Copiar link</button>
         <span class="clock"></span>
         <button class="btn small leave">Sair</button>
@@ -37,10 +39,6 @@ export function renderRoom(app, room, { onExit }) {
       </section>
 
       <section class="playing">
-        <div class="playing-bar">
-          <strong class="toy-name"></strong>
-          <button class="btn small back host-only">Voltar ao lobby</button>
-        </div>
         <div class="bezel"><div class="toy-root"></div></div>
       </section>
     </div>
@@ -214,8 +212,13 @@ export function renderRoom(app, room, { onExit }) {
   let clientRun = null
 
   function showPhase() {
-    $('.lobby').hidden = room.phase !== 'lobby'
-    $('.playing').hidden = room.phase !== 'playing'
+    const playing = room.phase === 'playing'
+    $('.lobby').hidden = playing
+    $('.playing').hidden = !playing
+    $('.toy-name').hidden = !playing
+    $('.back').hidden = !(playing && room.isHost)
+    // While playing, the page uses the full width so the screen can scale up.
+    app.classList.toggle('wide', playing)
   }
 
   function mountClient(toyId) {
@@ -266,6 +269,7 @@ export function renderRoom(app, room, { onExit }) {
 
   function exit(reason) {
     for (const off of offs) off()
+    app.classList.remove('wide')
     window.removeEventListener('keydown', onKey)
     clearInterval(clockTimer)
     unmountAll()

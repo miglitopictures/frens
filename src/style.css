@@ -28,6 +28,11 @@ body {
   padding: var(--s-4);
 }
 
+/* While a toy runs: full width, so the screen can reach 2x or 3x. */
+#app.wide {
+  max-width: none;
+}
+
 [hidden] {
   display: none !important;
 }
@@ -474,20 +479,26 @@ h3 {
 
 /* --- playing --- */
 
-.playing-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s-3);
-  min-height: 32px;
-  margin-bottom: var(--s-3);
-  padding: 0 var(--s-2);
-}
-
 .bezel {
-  padding: var(--s-4);
+  padding: var(--s-3);
   background: var(--panel);
   border-radius: var(--r-l);
+}
+
+/* The FR-6 screen (src/hw/screen.js). Its size is set by JS (whole-number scaling). */
+.hw-screen {
+  display: block;
+  margin: 0 auto;
+  border-radius: var(--r-s);
+  image-rendering: pixelated;
+  touch-action: none;
+  outline: none;
+}
+
+/* A toy that uses the hardware screen doesn't get the legacy look below. */
+.toy-root:has(.hw-screen) {
+  padding: 0;
+  background: transparent;
 }
 
 /* --- legacy toy styles ---

@@ -96,6 +96,70 @@ Both halves return `{ stop() }`. The platform calls it when the toy ends.
 Clean up there: `clearInterval`, `cancelAnimationFrame`, event listeners.
 The platform empties `ctx.root` after `stop()`.
 
+## The hardware
+
+Toys draw on the FR-6 hardware (art rules in docs/STYLEGUIDE.md). Import what you need:
+
+```js
+import { createScreen } from '../../hw/screen.js'
+import { createInput } from '../../hw/input.js'
+import { PALETTE, playerColorName } from '../../hw/palette.js'
+```
+
+### Screen: `createScreen(ctx.root)`
+
+A 640 x 360 canvas, scaled up by a whole number. **Colors are palette names**
+(`'coral'`, `'paper'`...). A name that is not in the palette throws an error.
+
+| Function | What it does |
+|---|---|
+| `clear(color)` | Fill the whole screen |
+| `pixel(x, y, color)` | One pixel |
+| `rect(x, y, w, h, color)` | Filled rectangle |
+| `frame(x, y, w, h, color)` | 1-pixel rectangle outline |
+| `line(x0, y0, x1, y1, color, size = 1)` | Line; `size` > 1 = round brush |
+| `circle(x, y, r, color)` | Filled circle |
+| `dither(x, y, w, h, color)` | Checkerboard fill: the FR-6 "50% transparent" |
+| `sprite(art, x, y, { scale, colors })` | Pixel art (same format as `icon`). `colors` overrides letters, e.g. `{ c: playerColorName(p.color) }` |
+| `text(str, x, y, { color, scale, align })` | System font. `(x, y)` = top-left of the line box. `align`: left / center / right. `\n` = new line |
+| `measureText(str, scale)` | Width in pixels |
+| `wrapText(str, maxWidth, scale)` | Split into lines that fit |
+| `toScreen(pointerEvent)` | Mouse / touch position in screen pixels `{ x, y }` |
+| `width`, `height`, `lineHeight` | 640, 360, 12 |
+| `canvas` | The `<canvas>`, for pointer events |
+| `context` | The raw 2D context, for special cases. Colors still come from `PALETTE` |
+| `destroy()` | Call it in `stop()` |
+
+Coordinates are whole pixels (numbers are rounded down). Draw every frame
+with `requestAnimationFrame`, or only when something changes. Both are fine.
+
+### Buttons: `createInput()`
+
+| Button | Keys |
+|---|---|
+| `up` `down` `left` `right` | arrows or W A S D |
+| `a` | Z or Space |
+| `b` | X |
+| `start` | Enter |
+
+```js
+const input = createInput()
+input.held.left                      // true while held
+input.onPress((button) => {})        // once, when it goes down
+input.onRelease((button) => {})      // once, when it goes up
+input.destroy()                      // in stop()
+```
+
+While a text field has focus, keys go to the field. The stylus is just pointer
+events on `screen.canvas` + `screen.toScreen(event)`.
+
+### Player colors
+
+`player.color` is a slot 0..5. `playerColorName(player.color)` gives the palette
+name to draw with. Use player colors only to show "which player".
+
+See `src/toys/cursors/` for a small toy that uses all of this.
+
 ## Rules of thumb
 
 - **Messages are plain JSON.** No classes, no functions, no `Map`.

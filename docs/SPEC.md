@@ -44,7 +44,11 @@ frens/
     style.css          console styles
     tokens.css         console design tokens (colors, type, spacing, motion)
     console/           boot, pixel logo, toy icons
-    hw/palette.js      the 32 FR-6 colors
+    hw/                the FR-6 "hardware" toys draw on
+      screen.js        640x360 screen, drawing with palette names
+      font.js          5x7 bitmap system font
+      input.js         standard buttons (arrows, Z, X, Enter)
+      palette.js       the 32 FR-6 colors
     net/room.js        the only file that talks to PeerJS
     lobby/home.js      create / join a room
     lobby/room-view.js player list, link, toy picker, start button

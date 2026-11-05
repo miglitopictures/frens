@@ -166,8 +166,10 @@ avoid using them for anything else.
 
 ### System font
 
-- One built-in **bitmap font**, 5 × 7 pixels per glyph (8 px line height).
-- Covers ASCII plus Portuguese accents (á à â ã é ê í ó ô õ ú ç).
+- One built-in **bitmap font**, 5 × 7 pixels per glyph (some letters narrower).
+- Line height 12 px: 3 rows on top for accents, 7 for the letter, 2 for descenders.
+- Covers ASCII plus Portuguese accents (á à â ã é ê í ó ô õ ú ç, and capitals).
+  Accents are composed (base letter + mark), so adding one is a single line in `src/hw/font.js`.
 - Drawn at scale ×1, ×2 or ×3 only. Toys do not load other fonts.
 
 ### Controls
