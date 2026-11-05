@@ -124,6 +124,7 @@ A 640 x 360 canvas, scaled up by a whole number. **Colors are palette names**
 | `text(str, x, y, { color, scale, align })` | System font. `(x, y)` = top-left of the line box. `align`: left / center / right. `\n` = new line |
 | `measureText(str, scale)` | Width in pixels |
 | `wrapText(str, maxWidth, scale)` | Split into lines that fit |
+| `drawLayer(layer, x, y)` | Paint a layer (see below) |
 | `toScreen(pointerEvent)` | Mouse / touch position in screen pixels `{ x, y }` |
 | `width`, `height`, `lineHeight` | 640, 360, 12 |
 | `canvas` | The `<canvas>`, for pointer events |
@@ -132,6 +133,34 @@ A 640 x 360 canvas, scaled up by a whole number. **Colors are palette names**
 
 Coordinates are whole pixels (numbers are rounded down). Draw every frame
 with `requestAnimationFrame`, or only when something changes. Both are fine.
+
+**Dither paints only half the pixels.** Always paint a solid color under a dithered
+area, or old frames will show through it.
+
+### Layers: `createLayer(width, height)`
+
+An offscreen image with the same drawing functions as the screen. Use it for
+things you paint once and show every frame: a drawing board, a map, a background.
+
+```js
+import { createLayer } from '../../hw/screen.js'
+const board = createLayer(400, 300)
+board.clear('paper')
+board.line(10, 10, 90, 40, 'black', 3)
+screen.drawLayer(board, 8, 34) // every frame
+```
+
+### Typing text
+
+The FR-6 has no text boxes on screen. To type (chat, guesses), add a hidden
+`<input class="hw-keyboard">` to `ctx.root`, focus it, and draw its `value` on the
+screen with `screen.text`. It also opens the keyboard on phones.
+See `src/toys/gartic/client.js` (`field`, `drawTypedText`).
+
+### Clickable things
+
+Draw a button, then remember its rectangle; on `pointerdown`, check which
+rectangle was hit. Gartic rebuilds the list every frame (`clickable(...)`).
 
 ### Buttons: `createInput()`
 

@@ -13,7 +13,8 @@
 //                            hint, word, scores, guessed }
 //                    choices { words }            (only to the drawer)
 //                    word { word }                (only to the drawer and to who guessed)
-//                    chat { name, text, kind }    kind: 'normal' | 'system' | 'secret' | 'close'
+//                    chat { id, name, text, kind }  kind: 'normal' | 'system' | 'secret' | 'close'
+//                                                 id = who wrote it ('' for system messages)
 //                    draw / strokes { list } / clear
 //
 // Phases:  choosing -> drawing -> between ("the word was...") -> choosing ... -> over
@@ -60,7 +61,7 @@ export function garticHost(ctx) {
   }
 
   function systemChat(text) {
-    ctx.send('chat', { name: '', text, kind: 'system' })
+    ctx.send('chat', { id: '', name: '', text, kind: 'system' })
   }
 
   // --- words ---
@@ -201,7 +202,7 @@ export function garticHost(ctx) {
     const guessing = game && game.phase === 'drawing'
 
     if (!guessing) {
-      ctx.send('chat', { name, text, kind: 'normal' })
+      ctx.send('chat', { id: fromId, name, text, kind: 'normal' })
       return
     }
 
@@ -210,7 +211,7 @@ export function garticHost(ctx) {
     if (knowsWord) {
       if (fromId === game.drawerId) return // the drawer doesn't chat while drawing
       for (const id of [game.drawerId, ...game.guessed]) {
-        ctx.sendTo(id, 'chat', { name, text, kind: 'secret' })
+        ctx.sendTo(id, 'chat', { id: fromId, name, text, kind: 'secret' })
       }
       return
     }
@@ -229,9 +230,9 @@ export function garticHost(ctx) {
       return
     }
 
-    ctx.send('chat', { name, text, kind: 'normal' })
+    ctx.send('chat', { id: fromId, name, text, kind: 'normal' })
     if (answer.length >= 4 && editDistance(guess, answer) === 1) {
-      ctx.sendTo(fromId, 'chat', { name: '', text: `"${text}" está perto!`, kind: 'close' })
+      ctx.sendTo(fromId, 'chat', { id: '', name: '', text: `"${text}" está perto!`, kind: 'close' })
     }
   }
 

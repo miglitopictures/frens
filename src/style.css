@@ -495,52 +495,20 @@ h3 {
   outline: none;
 }
 
-/* A toy that uses the hardware screen doesn't get the legacy look below. */
-.toy-root:has(.hw-screen) {
-  padding: 0;
-  background: transparent;
-}
-
-/* --- legacy toy styles ---
-   The toys still use the old light look. This keeps them readable inside the
-   dark console until they move to the hardware (step 4). Then delete this block. */
-
+/* The hidden text field toys use for typing (the text is drawn on the screen). */
 .toy-root {
-  padding: var(--s-4);
-  border-radius: var(--r-m);
-  background: #f4f1e8; /* palette: paper */
-  color: #262833; /* palette: ink */
-  font-family: system-ui, sans-serif;
+  position: relative;
 }
 
-.toy-root button {
-  font: inherit;
-  padding: 8px 14px;
-  border: 2px solid #1a1a1a;
-  border-radius: 8px;
-  background: #fff;
-  color: inherit;
-  cursor: pointer;
-}
-
-.toy-root button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.toy-root input {
-  font: inherit;
-  padding: 8px 10px;
-  border: 2px solid #1a1a1a;
-  border-radius: 8px;
-  width: 100%;
-}
-
-.toy-root .muted {
-  color: #6b6b6b;
-}
-
-.toy-root h2 {
-  margin: 0 0 8px;
-  font-size: 1.1rem;
+.hw-keyboard {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  font-size: 16px; /* stops phones from zooming in when it gets focus */
 }

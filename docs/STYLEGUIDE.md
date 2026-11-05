@@ -184,8 +184,9 @@ Every toy uses the same buttons, so players never relearn the basics.
 | Start | Enter | pause / menu |
 | Stylus | mouse / touch | draw, point, click |
 
-Text typing (chat, guesses) is the one exception: a text field takes the keyboard
-while it has focus.
+Text typing (chat, guesses) is the one exception: a hidden text field takes the
+keyboard while it has focus, and the typed text is drawn on the screen with the
+system font (with a blinking cursor). Menus drawn on the screen can also be clicked.
 
 ### Sound (later)
 

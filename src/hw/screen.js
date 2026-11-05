@@ -9,6 +9,13 @@
 //   screen.text('Olá!', 10, 40, { color: 'paper', scale: 2 })
 //   screen.destroy()   // in stop()
 //
+// A "layer" is an offscreen image with the same drawing functions, for things
+// you paint once and show many times (a drawing board, a map):
+//
+//   const board = createLayer(400, 300)
+//   board.line(0, 0, 50, 50, 'black', 3)
+//   screen.drawLayer(board, 8, 30)
+//
 // Coordinates are whole pixels; numbers are rounded down.
 // Full list of functions: docs/TOYS.md, section "The hardware".
 
@@ -24,35 +31,13 @@ export function hex(name) {
   return color
 }
 
-export function createScreen(root) {
-  const canvas = document.createElement('canvas')
-  canvas.className = 'hw-screen'
-  canvas.width = SCREEN_W
-  canvas.height = SCREEN_H
-  canvas.tabIndex = 0 // so it can take keyboard focus
-  root.append(canvas)
+// --- the drawing functions, shared by the screen and by layers ---
 
-  const g = canvas.getContext('2d')
+function createPainter(g, width, height) {
   g.imageSmoothingEnabled = false
+  const f = Math.floor
 
-  // --- scaling: the biggest whole number that fits; below 1x, shrink to fit ---
-
-  function fit() {
-    const top = canvas.getBoundingClientRect().top + window.scrollY
-    const availableW = root.clientWidth
-    const availableH = window.innerHeight - top - 24
-    let scale = Math.min(availableW / SCREEN_W, Math.max(availableH, 180) / SCREEN_H)
-    if (scale >= 1) scale = Math.floor(scale)
-    canvas.style.width = SCREEN_W * scale + 'px'
-    canvas.style.height = SCREEN_H * scale + 'px'
-  }
-  const observer = new ResizeObserver(fit)
-  observer.observe(root)
-  window.addEventListener('resize', fit)
-  fit()
-
-  // --- dither patterns (checkerboard), one per color, made on first use ---
-
+  // dither patterns (checkerboard), one per color, made on first use
   const patterns = {}
   function ditherPattern(name) {
     if (!patterns[name]) {
@@ -67,10 +52,6 @@ export function createScreen(root) {
     }
     return patterns[name]
   }
-
-  // --- drawing ---
-
-  const f = Math.floor
 
   function rect(x, y, w, h, color) {
     g.fillStyle = hex(color)
@@ -131,6 +112,7 @@ export function createScreen(root) {
   }
 
   // Half the pixels of the area, in a checkerboard. The FR-6 way to do "50% transparent".
+  // The other half is NOT painted: draw a solid color under it if the area changes.
   function dither(x, y, w, h, color) {
     g.fillStyle = ditherPattern(color)
     g.fillRect(f(x), f(y), f(w), f(h))
@@ -158,10 +140,10 @@ export function createScreen(root) {
     String(str)
       .split('\n')
       .forEach((lineText, i) => {
-        const width = measureText(lineText, scale)
+        const w = measureText(lineText, scale)
         let left = f(x)
-        if (align === 'center') left = f(x - width / 2)
-        if (align === 'right') left = f(x - width)
+        if (align === 'center') left = f(x - w / 2)
+        if (align === 'right') left = f(x - w)
         layoutText(lineText, left, f(y) + i * LINE_HEIGHT * scale, scale, (px, py) =>
           g.fillRect(px, py, scale, scale),
         )
@@ -169,22 +151,17 @@ export function createScreen(root) {
   }
 
   function clear(color = 'black') {
-    rect(0, 0, SCREEN_W, SCREEN_H, color)
+    rect(0, 0, width, height, color)
   }
 
-  // Pointer event -> screen pixel { x, y } (can be outside 0..639 / 0..359).
-  function toScreen(event) {
-    const box = canvas.getBoundingClientRect()
-    return {
-      x: f(((event.clientX - box.left) / box.width) * SCREEN_W),
-      y: f(((event.clientY - box.top) / box.height) * SCREEN_H),
-    }
+  // Paint a layer (see createLayer) at (x, y).
+  function drawLayer(layer, x, y) {
+    g.drawImage(layer.canvas, f(x), f(y))
   }
 
   return {
-    canvas,
-    width: SCREEN_W,
-    height: SCREEN_H,
+    width,
+    height,
     lineHeight: LINE_HEIGHT,
     // For special cases only (e.g. drawing an offscreen image).
     // Colors still have to come from the palette.
@@ -199,8 +176,56 @@ export function createScreen(root) {
     dither,
     sprite,
     text,
+    drawLayer,
     measureText,
     wrapText,
+  }
+}
+
+// An offscreen image you can draw on, then show with screen.drawLayer(layer, x, y).
+export function createLayer(width, height) {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  return { canvas, ...createPainter(canvas.getContext('2d'), width, height) }
+}
+
+export function createScreen(root) {
+  const canvas = document.createElement('canvas')
+  canvas.className = 'hw-screen'
+  canvas.width = SCREEN_W
+  canvas.height = SCREEN_H
+  canvas.tabIndex = 0 // so it can take keyboard focus
+  root.append(canvas)
+
+  // --- scaling: the biggest whole number that fits; below 1x, shrink to fit ---
+
+  function fit() {
+    const top = canvas.getBoundingClientRect().top + window.scrollY
+    const availableW = root.clientWidth
+    const availableH = window.innerHeight - top - 24
+    let scale = Math.min(availableW / SCREEN_W, Math.max(availableH, 180) / SCREEN_H)
+    if (scale >= 1) scale = Math.floor(scale)
+    canvas.style.width = SCREEN_W * scale + 'px'
+    canvas.style.height = SCREEN_H * scale + 'px'
+  }
+  const observer = new ResizeObserver(fit)
+  observer.observe(root)
+  window.addEventListener('resize', fit)
+  fit()
+
+  // Pointer event -> screen pixel { x, y } (can be outside 0..639 / 0..359).
+  function toScreen(event) {
+    const box = canvas.getBoundingClientRect()
+    return {
+      x: Math.floor(((event.clientX - box.left) / box.width) * SCREEN_W),
+      y: Math.floor(((event.clientY - box.top) / box.height) * SCREEN_H),
+    }
+  }
+
+  return {
+    canvas,
+    ...createPainter(canvas.getContext('2d'), SCREEN_W, SCREEN_H),
     toScreen,
 
     destroy() {
