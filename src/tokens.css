@@ -1,0 +1,58 @@
+/* Console design tokens. See docs/STYLEGUIDE.md.
+   The console UI uses only these variables, never raw hex values.
+   --accent is set at runtime to the player's own color. */
+
+:root {
+  /* surfaces */
+  --bg: #121419;
+  --grid: #1a1d24;
+  --panel: #1e222a;
+  --panel-2: #282d37;
+  --line: #333946;
+
+  /* text */
+  --text: #e9ebf1;
+  --text-2: #9aa0ae;
+  --text-3: #646b7a;
+
+  /* accent and status */
+  --accent: #4fb3ff; /* default until we know the player's color */
+  --on-accent: #0b0c10;
+  --error: #ff8a80;
+
+  /* player colors (same values as src/hw/palette.js) */
+  --p1: #ff6b57;
+  --p2: #4fb3ff;
+  --p3: #ffc23d;
+  --p4: #4fd6a0;
+  --p5: #a78bfa;
+  --p6: #ff7eb6;
+
+  /* type */
+  --font: 'Nunito', system-ui, sans-serif;
+  --fs-s: 13px;
+  --fs-m: 15px;
+  --fs-l: 18px;
+  --fs-xl: 24px;
+  --fs-xxl: 32px;
+
+  /* shape */
+  --r-s: 8px;
+  --r-m: 14px;
+  --r-l: 22px;
+  --r-pill: 999px;
+
+  /* spacing */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+
+  /* motion */
+  --t-fast: 120ms;
+  --t-base: 220ms;
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
