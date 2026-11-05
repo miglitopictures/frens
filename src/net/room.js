@@ -5,7 +5,7 @@
 //   room.code        'k3x9q2'
 //   room.me          { id, name, isHost }
 //   room.isHost      true / false
-//   room.players     [{ id, name, isHost }]
+//   room.players     [{ id, name, isHost, color }]   color = fixed slot 0..5
 //   room.phase       'lobby' | 'playing'
 //   room.toyId       id of the running toy, or null
 //
@@ -122,7 +122,7 @@ export function createRoom({ name, password }) {
     room.isHost = true
 
     peer.on('open', (id) => {
-      room.me = { id, name, isHost: true }
+      room.me = { id, name, isHost: true, color: 0 }
       room.players = [room.me]
       resolve(room)
     })
@@ -167,7 +167,7 @@ export function createRoom({ name, password }) {
         return
       }
 
-      const player = { id: conn.peer, name: data.name || 'Anônimo', isHost: false }
+      const player = { id: conn.peer, name: data.name || 'Anônimo', isHost: false, color: freeColor() }
       conns[player.id] = conn
       room.players = [...room.players, player]
 
@@ -177,6 +177,15 @@ export function createRoom({ name, password }) {
         data: { you: player, players: room.players, phase: room.phase, toyId: room.toyId },
       })
       broadcastPlayers()
+    }
+
+    // Each player keeps one color slot (0..5) for the whole room.
+    // A newcomer takes the lowest free slot, so nobody's color changes when someone leaves.
+    function freeColor() {
+      for (let color = 0; color < MAX_PLAYERS; color++) {
+        if (!room.players.some((p) => p.color === color)) return color
+      }
+      return 0
     }
 
     function removePlayer(id) {

@@ -92,8 +92,10 @@ hex value in console CSS; use a variable.
 
 ### Components
 
-- **Status bar** (top, always visible in a room): room code chip · 6 player slots
-  (filled dots in player colors, empty ring for a free slot) · connection signal · clock.
+- **Status bar** (top, always visible in a room): room code · 6 player slots
+  (filled dots in player colors, empty ring for a free slot) · copy link (host) · clock · leave.
+- **Player cards** (lobby): one card per color slot, in slot order. Empty slots are
+  dashed and say "livre".
 - **Toy carousel** (lobby): toys in a horizontal row, like cartridges. The selected
   one is bigger, has the accent outline, and its **banner** shows above
   (icon, name, description, player count). Arrows / click to move, Ⓐ to start.
@@ -196,4 +198,4 @@ A few chiptune channels (square, triangle, noise). Defined when we get there.
 - [ ] Player colors only mean "which player".
 - [ ] Text uses the system font.
 - [ ] Controls follow the table above.
-- [ ] Has an 8 × 8 (or 16 × 16) pixel icon for the carousel.
+- [ ] Has a 16 × 16 (or 8 × 8) pixel icon for the carousel (see docs/TOYS.md).

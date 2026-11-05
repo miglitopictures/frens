@@ -27,6 +27,7 @@ export default {
   description: '...',      // one line, shown in the lobby
   minPlayers: 2,           // "Começar" is disabled below this
   maxPlayers: 6,           // never more than 6
+  icon: { colors, pixels },// pixel icon for the lobby carousel, see below
 
   host(ctx)   { return { stop() {} } },  // optional
   client(ctx) { return { stop() {} } },  // required
@@ -53,7 +54,7 @@ keeping the original sender as `fromId`. See `src/toys/cursors/` for an example.
 
 | Field | What it does |
 |---|---|
-| `ctx.players` | Current players `[{ id, name, isHost }]` |
+| `ctx.players` | Current players `[{ id, name, isHost, color }]` (`color` = player color slot 0..5) |
 | `ctx.send(type, data)` | Send to **all** clients (host's own client included) |
 | `ctx.sendTo(playerId, type, data)` | Send to **one** client |
 | `ctx.on(type, (data, fromId) => {})` | Receive a message from a client |
@@ -65,11 +66,29 @@ keeping the original sender as `fromId`. See `src/toys/cursors/` for an example.
 | Field | What it does |
 |---|---|
 | `ctx.root` | A `<div>` that belongs to this toy. Put your DOM / canvas here |
-| `ctx.me` | This player `{ id, name, isHost }` |
+| `ctx.me` | This player `{ id, name, isHost, color }` |
 | `ctx.players` | Current players |
 | `ctx.send(type, data)` | Send to the host |
 | `ctx.on(type, (data, fromId) => {})` | Receive a message from the host. `fromId` is who originally sent it (the host, or the friend whose message the host forwarded) |
 | `ctx.onPlayersChange((players) => {})` | Someone joined or left |
+
+### `icon`
+
+A small pixel-art picture (16 × 16, or 8 × 8) shown in the lobby carousel.
+Colors must come from the FR-6 palette (`src/hw/palette.js`, docs/STYLEGUIDE.md).
+
+```js
+icon: {
+  colors: { '.': 'paper', k: 'ink', a: 'amber' }, // character -> palette color name
+  pixels: [
+    '................',
+    '..kk....aa......',
+    // ... one string per row
+  ],
+},
+```
+
+A character that is not in `colors` is a transparent pixel.
 
 ### `stop()`
 

@@ -8,6 +8,7 @@
 
 import { renderHome, renderJoin } from './lobby/home.js'
 import { renderRoom } from './lobby/room-view.js'
+import { boot } from './console/boot.js'
 
 const app = document.querySelector('#app')
 
@@ -33,3 +34,4 @@ function start() {
 }
 
 start()
+boot() // plays on top of the screen that is already rendered

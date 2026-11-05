@@ -17,6 +17,27 @@ export default {
   description: 'Todo mundo vê o mouse de todo mundo. Toy de teste.',
   minPlayers: 1,
   maxPlayers: 6,
+  icon: {
+    colors: { a: 'amber', c: 'coral', k: 'ink', m: 'mint', n: 'night', w: 'paper' },
+    pixels: [
+      'nnnnnnnnnnnnnnnn',
+      'nwnnnnnnnnnnnnnn',
+      'nwwnnnnnnnnmmnnn',
+      'nwkwnnnnnnnmmnnn',
+      'nwkkwnnnnnnnnnnn',
+      'nwkkkwnnnnnnnnnn',
+      'nwkkkkwnnnnnnnnn',
+      'nwkkkkkwnnnnnnnn',
+      'nwkkwwwwnnnnnnnn',
+      'nwkwnnnnnnnnnnnn',
+      'nwwnnnnnnnnnnnnn',
+      'nwnnnnnnnnnnaann',
+      'nnnnnccnnnnnaann',
+      'nnnnnccnnnnnnnnn',
+      'nnnnnnnnnnnnnnnn',
+      'nnnnnnnnnnnnnnnn',
+    ],
+  },
 
   client(ctx) {
     const canvas = document.createElement('canvas')

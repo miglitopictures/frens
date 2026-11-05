@@ -1,4 +1,7 @@
-/* Global styles. Keep it small; each toy styles its own UI. */
+/* Console styles. Values come from tokens.css; see docs/STYLEGUIDE.md.
+   Toys style their own screen (and, from step 4, draw on the hardware). */
+
+@import './tokens.css';
 
 * {
   box-sizing: border-box;
@@ -6,54 +9,515 @@
 
 body {
   margin: 0;
-  font-family: system-ui, sans-serif;
-  background: #f4f1ea;
-  color: #1a1a1a;
+  min-height: 100vh;
+  font-family: var(--font);
+  font-weight: 500;
+  font-size: var(--fs-m);
+  color: var(--text);
+  /* the DSi "graph paper", at night */
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
 }
 
 #app {
-  max-width: 960px;
+  max-width: 1040px;
   margin: 0 auto;
-  padding: 24px 16px;
+  padding: var(--s-4);
 }
 
 [hidden] {
   display: none !important;
 }
 
-h1 {
-  margin: 0 0 8px;
-}
-
-h2 {
-  margin: 0 0 8px;
-  font-size: 1.1rem;
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 800;
 }
 
 .muted {
-  color: #6b6b6b;
+  color: var(--text-2);
 }
 
 .error {
-  color: #b3261e;
-  min-height: 1.2em;
+  margin: 0;
+  min-height: 1.4em;
+  font-size: var(--fs-s);
+  color: var(--error);
 }
 
-button {
+.error:not(:empty)::before {
+  content: '⚠ ';
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: var(--r-m);
+  padding: var(--s-5);
+}
+
+/* --- buttons and fields --- */
+
+.btn {
+  font: inherit;
+  font-weight: 800;
+  border: 0;
+  border-radius: var(--r-pill);
+  padding: 10px 22px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    transform var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out),
+    filter var(--t-fast) var(--ease-out);
+}
+
+.btn:hover {
+  background: var(--line);
+}
+
+.btn:active {
+  transform: scale(0.96);
+}
+
+.btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+.btn.small {
+  padding: 6px 14px;
+  font-size: var(--fs-s);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+  filter: none;
+}
+
+.key {
+  margin-right: 6px;
+}
+
+.field {
+  font: inherit;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.field::placeholder {
+  color: var(--text-3);
+}
+
+.btn:focus-visible,
+.field:focus-visible,
+.cart:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* --- pixel logo --- */
+
+.pixel-logo {
+  display: grid;
+}
+
+.pixel-logo .px {
+  border-radius: 22%;
+}
+
+.px.pop {
+  animation: pop 360ms var(--ease-spring) both;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- boot --- */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-5);
+  background: var(--bg);
+  transition: opacity 220ms var(--ease-out);
+}
+
+.boot.done {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.boot-model {
+  margin: 0;
+  font-weight: 800;
+  letter-spacing: 0.4em;
+  color: var(--text-2);
+  animation: rise 300ms var(--ease-out) 800ms both;
+}
+
+/* --- home --- */
+
+.home {
+  max-width: 400px;
+  margin: 10vh auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+
+.home .pixel-logo {
+  align-self: center;
+}
+
+.home h2 {
+  font-size: var(--fs-xl);
+}
+
+.home .muted {
+  margin: var(--s-2) 0 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: var(--fs-s);
+  color: var(--text-2);
+}
+
+.form .btn {
+  margin-top: var(--s-2);
+}
+
+.footer {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-s);
+  letter-spacing: 0.1em;
+  color: var(--text-3);
+}
+
+/* --- status bar --- */
+
+.status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-bottom: var(--s-5);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  background: var(--panel);
+  border-radius: var(--r-l);
+}
+
+.chip {
+  color: var(--text-2);
+}
+
+.chip strong {
+  color: var(--text);
+  letter-spacing: 0.05em;
+}
+
+.slots {
+  display: flex;
+  gap: 6px;
+}
+
+.slot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.slot.on {
+  background: var(--c);
+  box-shadow: none;
+}
+
+.clock {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.spacer {
+  flex: 1;
+}
+
+@media (max-width: 520px) {
+  .clock {
+    display: none;
+  }
+}
+
+/* --- lobby --- */
+
+.lobby {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-6);
+}
+
+.players {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s-2);
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  padding: var(--s-3) var(--s-4);
+  background: var(--panel);
+  border: 2px solid transparent;
+  border-radius: var(--r-m);
+}
+
+.player::before {
+  content: '';
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--c);
+}
+
+.player strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player .tag {
+  margin-left: auto;
+  font-size: var(--fs-s);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.player.me {
+  border-color: var(--c);
+}
+
+.player.empty {
+  background: transparent;
+  border: 2px dashed var(--line);
+  color: var(--text-3);
+}
+
+.player.empty::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  width: min(480px, 100%);
+  padding: var(--s-4) var(--s-5);
+  background: var(--panel);
+  border-radius: var(--r-l);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.banner.swap {
+  animation: rise var(--t-base) var(--ease-out);
+}
+
+.banner .info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.banner .name {
+  font-size: var(--fs-l);
+  font-weight: 800;
+}
+
+.banner .desc {
+  color: var(--text-2);
+}
+
+.banner .count {
+  font-size: var(--fs-s);
+  color: var(--text-3);
+}
+
+.icon {
+  display: block;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--r-s);
+  image-rendering: pixelated;
+}
+
+.icon.big {
+  flex: none;
+  width: 56px;
+  height: 56px;
+}
+
+.carousel {
+  display: flex;
+  gap: var(--s-4);
+  max-width: 100%;
+  padding: var(--s-5);
+  overflow-x: auto;
+}
+
+.cart {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  border: 0;
+  border-radius: var(--r-l);
+  background: var(--panel);
+  cursor: pointer;
+  outline: 3px solid transparent;
+  outline-offset: 4px;
+  transition:
+    transform var(--t-base) var(--ease-spring),
+    background var(--t-fast) var(--ease-out),
+    outline-color var(--t-fast) var(--ease-out);
+}
+
+.cart:hover {
+  background: var(--panel-2);
+}
+
+.cart.selected {
+  transform: scale(1.15);
+  outline-color: var(--accent);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+}
+
+.hint {
+  font-size: var(--fs-s);
+  color: var(--text-3);
+}
+
+.waiting {
+  margin: 0;
+  text-align: center;
+  color: var(--text-2);
+}
+
+/* --- playing --- */
+
+.playing-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  min-height: 32px;
+  margin-bottom: var(--s-3);
+  padding: 0 var(--s-2);
+}
+
+.bezel {
+  padding: var(--s-4);
+  background: var(--panel);
+  border-radius: var(--r-l);
+}
+
+/* --- legacy toy styles ---
+   The toys still use the old light look. This keeps them readable inside the
+   dark console until they move to the hardware (step 4). Then delete this block. */
+
+.toy-root {
+  padding: var(--s-4);
+  border-radius: var(--r-m);
+  background: #f4f1e8; /* palette: paper */
+  color: #262833; /* palette: ink */
+  font-family: system-ui, sans-serif;
+}
+
+.toy-root button {
   font: inherit;
   padding: 8px 14px;
   border: 2px solid #1a1a1a;
   border-radius: 8px;
   background: #fff;
+  color: inherit;
   cursor: pointer;
 }
 
-button:disabled {
+.toy-root button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-input {
+.toy-root input {
   font: inherit;
   padding: 8px 10px;
   border: 2px solid #1a1a1a;
@@ -61,90 +525,11 @@ input {
   width: 100%;
 }
 
-/* --- home --- */
-
-.card {
-  max-width: 380px;
-  margin: 10vh auto 0;
-}
-
-.card form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.card label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.9rem;
-}
-
-/* --- room --- */
-
-.bar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 12px;
-  margin-bottom: 16px;
-  border-bottom: 2px solid #1a1a1a;
-}
-
-.bar-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.bar-row .link {
-  flex: 1;
-  min-width: 0;
-}
-
-.spacer {
-  flex: 1;
-}
-
-.code {
-  font-family: ui-monospace, monospace;
-}
-
-.toy-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
-.toy {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  text-align: left;
-}
-
-.toy span {
-  font-size: 0.85rem;
+.toy-root .muted {
   color: #6b6b6b;
 }
 
-.toy.selected {
-  background: #1a1a1a;
-  color: #fff;
-}
-
-.toy.selected span {
-  color: #ccc;
-}
-
-.playing-bar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
+.toy-root h2 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
 }
