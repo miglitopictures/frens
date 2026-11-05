@@ -1,6 +1,14 @@
-// Client half of Worms: draws the game and sends keyboard input.
+// Client half of Worms: draws the game on the FR-6 screen and sends button input.
 // It never decides anything: positions, turns and wind come from the host.
+//
+// The world (1200 x 600) is bigger than the screen (640 x 360), so a camera
+// follows the active worm, or the shot while it flies.
+//
+// Buttons:  ← → walk · ↑ ↓ aim · Ⓑ jump · hold Ⓐ to charge, release to fire
 
+import { createScreen, SCREEN_W, SCREEN_H } from '../../hw/screen.js'
+import { createInput } from '../../hw/input.js'
+import { rgb } from '../../hw/palette.js'
 import { createTerrain } from './terrain.js'
 import {
   WORLD_W,
@@ -12,93 +20,73 @@ import {
   DEFAULT_TURN_TIME,
 } from './constants.js'
 
-const SKY = '#bde0fe'
-const DIRT = [139, 94, 60]
-const GRASS = [76, 149, 108]
-const WATER = 'rgba(29, 78, 137, 0.85)'
+// --- art: Minhocas' own look, every color from the FR-6 palette ---
+
+const GRASS = rgb('lime')
+const GRASS_DARK = rgb('green')
+const DIRT = rgb('brown')
+const DIRT_DARK = rgb('bark')
+
+const CLOUD = {
+  colors: { w: 'paper', i: 'ice' },
+  pixels: [
+    '....wwww........',
+    '..wwwwwwww.www..',
+    '.wwwwwwwwwwwwww.',
+    'wwwwwwwwwwwwwwww',
+    '.iiiiiiiiiiiiii.',
+  ],
+}
+
+// Bobbing arrow over the worm whose turn it is.
+const POINTER = {
+  colors: { k: 'black', w: 'paper' },
+  pixels: ['kkkkkkk', 'kwwwwwk', '.kwwwk.', '..kwk..', '...k...'],
+}
+
+const CROSSHAIR = {
+  colors: { k: 'black', w: 'paper' },
+  pixels: ['...k...', '...w...', '.......', 'kw...wk', '.......', '...w...', '...k...'],
+}
+
+// Clouds drift slowly and move less than the ground when the camera moves (parallax).
+const CLOUDS = [
+  { x: 40, y: 34 },
+  { x: 300, y: 70 },
+  { x: 520, y: 24 },
+  { x: 760, y: 88 },
+]
+
+const HELP = '← → anda · ↑ ↓ mira · Ⓑ pula · segure Ⓐ e solte pra atirar'
 
 export function wormsClient(ctx) {
-  ctx.root.innerHTML = `
-    <style>
-      .worms canvas { width: 100%; display: block; border: 2px solid #1a1a1a; border-radius: 8px; }
-      .worms-stage { position: relative; }
-      .worms-over {
-        position: absolute; inset: 0; display: flex; flex-direction: column;
-        align-items: center; justify-content: center; gap: 12px;
-        background: rgba(255, 255, 255, 0.75); font-size: 1.4rem;
-      }
-      .worms-setup { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-      .worms-setup select { font: inherit; padding: 6px; }
-      .worms-help { margin-top: 8px; }
-    </style>
-    <div class="worms">
-      <div class="worms-setup"></div>
-      <div class="worms-stage" hidden>
-        <canvas width="${WORLD_W}" height="${WORLD_H}"></canvas>
-        <div class="worms-over" hidden>
-          <strong class="worms-winner"></strong>
-          <button class="worms-again">Jogar de novo</button>
-        </div>
-      </div>
-      <p class="worms-help muted">← → anda · Enter pula · ↑ ↓ mira · segure Espaço pra carregar e solte pra atirar</p>
-    </div>
-  `
-
-  const $ = (selector) => ctx.root.querySelector(selector)
-  const canvas = $('canvas')
-  const g = canvas.getContext('2d')
+  const screen = createScreen(ctx.root)
+  const input = createInput()
 
   let terrain = null
   let terrainImage = null // offscreen canvas with the terrain already drawn
   let teams = []
-  let state = null
-  const shown = {} // wormId (or 'shot') -> { x, y } smoothed position on screen
+  let state = null // null = setup screen
+  let turnTime = DEFAULT_TURN_TIME // chosen on the setup screen (host)
+  const shown = {} // wormId (or 'shot') -> { x, y } smoothed position
   let booms = [] // explosions being animated: { x, y, r, startedAt }
-
-  // --- screens ---
-
-  function showSetup() {
-    state = null
-    terrain = null
-    $('.worms-stage').hidden = true
-    $('.worms-setup').hidden = false
-
-    if (!ctx.me.isHost) {
-      $('.worms-setup').innerHTML = '<p>Esperando o host iniciar a partida...</p>'
-      return
-    }
-
-    const options = TURN_TIMES.map(
-      (t) => `<option value="${t}" ${t === DEFAULT_TURN_TIME ? 'selected' : ''}>${t} segundos</option>`,
-    ).join('')
-    $('.worms-setup').innerHTML = `
-      <p>Cada jogador comanda um time de 3 minhocas. Último time vivo vence.</p>
-      <label>Tempo do turno <select>${options}</select></label>
-      <button>Iniciar partida</button>
-    `
-    $('.worms-setup button').addEventListener('click', () => {
-      ctx.send('start', { turnTime: Number($('.worms-setup select').value) })
-    })
-  }
-
-  function showGame() {
-    $('.worms-setup').hidden = true
-    $('.worms-stage').hidden = false
-  }
-
-  $('.worms-again').hidden = !ctx.me.isHost
-  $('.worms-again').addEventListener('click', () => ctx.send('again', {}))
+  const camera = { x: 0, y: 0 } // top-left of the screen, in world pixels
+  let snapCamera = true // jump straight to the target instead of gliding
 
   // --- network ---
 
-  ctx.on('setup', showSetup)
+  ctx.on('setup', () => {
+    state = null
+    terrain = null
+    terrainImage = null
+  })
 
   ctx.on('game', (data) => {
     teams = data.teams
     terrain = createTerrain(data.seed)
     for (const c of data.craters) terrain.carve(c.x, c.y, c.r)
     terrainImage = drawTerrainImage(terrain)
-    showGame()
+    snapCamera = true
   })
 
   ctx.on('boom', (data) => {
@@ -110,8 +98,6 @@ export function wormsClient(ctx) {
 
   ctx.on('state', (data) => {
     state = data
-    $('.worms-over').hidden = data.phase !== 'over'
-    $('.worms-winner').textContent = data.winner ? `${data.winner} venceu!` : 'Ninguém venceu'
   })
 
   // --- input ---
@@ -122,71 +108,79 @@ export function wormsClient(ctx) {
     return Boolean(worm && teams[worm.team] && teams[worm.team].playerId === ctx.me.id)
   }
 
-  const keys = { left: false, right: false, up: false, down: false }
-  const ARROWS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }
+  const ARROWS = ['left', 'right', 'up', 'down']
 
-  function onKey(event) {
-    const isGameKey = ARROWS[event.key] || event.key === 'Enter' || event.key === ' '
-    if (!state || !isGameKey) return
-    event.preventDefault() // don't scroll the page
-    const down = event.type === 'keydown'
-
-    if (event.key === 'Enter') {
-      if (down && !event.repeat && isMyTurn()) ctx.send('jump', {})
-      return
-    }
-
-    if (event.key === ' ') {
-      if (event.repeat || !isMyTurn()) return
-      ctx.send(down ? 'charge' : 'fire', {})
-      return
-    }
-
-    // Arrows: only send when something actually changed.
-    const name = ARROWS[event.key]
-    if (keys[name] === down) return
-    keys[name] = down
-    if (isMyTurn()) ctx.send('input', keys)
+  function sendArrows() {
+    if (!isMyTurn()) return
+    const { left, right, up, down } = input.held
+    ctx.send('input', { left, right, up, down })
   }
 
-  window.addEventListener('keydown', onKey)
-  window.addEventListener('keyup', onKey)
+  input.onPress((button) => {
+    // Setup screen: the host picks the turn time with ◀ ▶ and starts with Ⓐ.
+    if (!state) {
+      if (!ctx.me.isHost) return
+      const i = TURN_TIMES.indexOf(turnTime)
+      if (button === 'left') turnTime = TURN_TIMES[Math.max(0, i - 1)]
+      if (button === 'right') turnTime = TURN_TIMES[Math.min(TURN_TIMES.length - 1, i + 1)]
+      if (button === 'a') ctx.send('start', { turnTime })
+      return
+    }
+
+    if (state.phase === 'over') {
+      if (button === 'a' && ctx.me.isHost) ctx.send('again', {})
+      return
+    }
+
+    if (ARROWS.includes(button)) sendArrows()
+    else if (button === 'b' && isMyTurn()) ctx.send('jump', {})
+    else if (button === 'a' && isMyTurn()) ctx.send('charge', {})
+  })
+
+  input.onRelease((button) => {
+    if (!state || state.phase !== 'playing') return
+    if (ARROWS.includes(button)) sendArrows()
+    else if (button === 'a' && isMyTurn()) ctx.send('fire', {})
+  })
 
   // --- drawing ---
 
   let frame = 0
   function draw() {
     frame = requestAnimationFrame(draw)
-    if (!state || !terrainImage) return
 
-    g.fillStyle = SKY
-    g.fillRect(0, 0, WORLD_W, WORLD_H)
-    g.drawImage(terrainImage, 0, 0)
+    if (!state || !terrainImage) {
+      drawSetup()
+      return
+    }
+
+    updateCamera()
+    const cx = Math.floor(camera.x)
+    const cy = Math.floor(camera.y)
+
+    drawSky(cx)
+    screen.context.drawImage(terrainImage, -cx, -cy)
 
     for (const worm of state.worms) {
       if (!worm.alive) continue
       const pos = smooth(worm.id, worm, 40)
       const isActive = worm.id === state.activeWormId
-      drawWorm(worm, pos, isActive)
-      if (isActive && !state.fired) drawAim(worm, pos)
+      drawWorm(worm, pos.x - cx, pos.y - cy, isActive)
+      if (isActive && !state.fired) drawAim(worm, pos.x - cx, pos.y - cy)
     }
 
     if (state.shot) {
       const pos = smooth('shot', state.shot, 80)
-      g.fillStyle = '#1a1a1a'
-      g.beginPath()
-      g.arc(pos.x, pos.y, 4, 0, Math.PI * 2)
-      g.fill()
+      screen.circle(pos.x - cx, pos.y - cy, 2, 'black')
+      screen.pixel(pos.x - cx - 1, pos.y - cy - 1, 'paper')
     } else {
       delete shown.shot
     }
 
-    drawBooms()
-
-    g.fillStyle = WATER
-    g.fillRect(0, WATER_Y, WORLD_W, WORLD_H - WATER_Y)
-
+    drawBooms(cx, cy)
+    drawWater(cy)
     drawHud()
+    if (state.phase === 'over') drawGameOver()
   }
 
   // The host sends positions 20x per second; glide towards them so it looks smooth.
@@ -202,130 +196,210 @@ export function wormsClient(ctx) {
     return shown[id]
   }
 
-  // Crosshair where the worm is aiming, plus the power bar while charging.
-  function drawAim(worm, pos) {
+  // The camera follows the shot while it flies, otherwise the active worm.
+  function updateCamera() {
+    const target = state.shot || state.worms.find((w) => w.id === state.activeWormId)
+    if (!target) return
+    const goalX = clamp(target.x - SCREEN_W / 2, 0, WORLD_W - SCREEN_W)
+    const goalY = clamp(target.y - SCREEN_H * 0.55, 0, WORLD_H - SCREEN_H)
+    if (snapCamera) {
+      camera.x = goalX
+      camera.y = goalY
+      snapCamera = false
+    } else {
+      camera.x += (goalX - camera.x) * 0.1
+      camera.y += (goalY - camera.y) * 0.1
+    }
+  }
+
+  function drawSky(cx) {
+    // Dither only paints half the pixels, so always paint a solid color under it.
+    screen.rect(0, 0, SCREEN_W, 200, 'sky')
+    screen.dither(0, 150, SCREEN_W, 50, 'ice')
+    screen.rect(0, 200, SCREEN_W, SCREEN_H - 200, 'ice')
+
+    const drift = performance.now() / 250
+    const span = SCREEN_W + 64
+    for (const cloud of CLOUDS) {
+      const x = ((((cloud.x + drift - cx * 0.4) % span) + span) % span) - 32
+      screen.sprite(CLOUD, x, cloud.y, { scale: 2 })
+    }
+  }
+
+  function drawWater(cy) {
+    const top = WATER_Y - cy
+    if (top >= SCREEN_H) return
+    const wave = Math.floor(performance.now() / 150) % 8
+    screen.rect(0, top + 2, SCREEN_W, SCREEN_H, 'blue')
+    screen.dither(0, top + 10, SCREEN_W, SCREEN_H, 'navy')
+    for (let x = -8; x < SCREEN_W; x += 8) screen.rect(x + wave, top, 4, 2, 'ice')
+  }
+
+  // Text with a 1-pixel black outline, so it reads on sky and on ground.
+  function outlined(str, x, y, color) {
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      screen.text(str, x + dx, y + dy, { color: 'black', align: 'center' })
+    }
+    screen.text(str, x, y, { color, align: 'center' })
+  }
+
+  function drawWorm(worm, x, y, isActive) {
+    const team = teams[worm.team]
+    const color = team ? team.color : 'gray'
+
+    screen.circle(x, y, WORM_RADIUS + 1, 'black')
+    screen.circle(x, y, WORM_RADIUS, color)
+
+    // eye, on the side it is facing
+    const eyeX = Math.floor(x) + worm.facing * 2
+    screen.rect(eyeX - 1, y - 4, 3, 3, 'paper')
+    screen.pixel(eyeX + worm.facing, y - 3, 'black')
+
+    outlined(worm.name, x, y - 34, color)
+    outlined(String(worm.hp), x, y - 23, 'paper')
+
+    if (isActive) {
+      const bob = Math.round(Math.sin(performance.now() / 150) * 2)
+      screen.sprite(POINTER, x - 3, y - 44 + bob)
+    }
+  }
+
+  // Crosshair where the worm is aiming, plus the power line while charging.
+  function drawAim(worm, x, y) {
     const dirX = Math.cos(worm.aim) * worm.facing
     const dirY = Math.sin(worm.aim)
 
     if (state.charge !== null) {
-      g.strokeStyle = '#e4572e'
-      g.lineWidth = 5
-      g.lineCap = 'round'
-      g.beginPath()
-      g.moveTo(pos.x + dirX * 10, pos.y + dirY * 10)
-      g.lineTo(pos.x + dirX * (10 + state.charge * 40), pos.y + dirY * (10 + state.charge * 40))
-      g.stroke()
+      const color = state.charge < 0.5 ? 'amber' : state.charge < 0.8 ? 'orange' : 'coral'
+      const length = 10 + state.charge * 40
+      screen.line(x + dirX * 10, y + dirY * 10, x + dirX * length, y + dirY * length, color, 3)
     }
 
-    g.strokeStyle = '#1a1a1a'
-    g.lineWidth = 1.5
-    g.beginPath()
-    g.arc(pos.x + dirX * 32, pos.y + dirY * 32, 4, 0, Math.PI * 2)
-    g.stroke()
+    screen.sprite(CROSSHAIR, x + dirX * 32 - 3, y + dirY * 32 - 3)
   }
 
-  // Expanding, fading circle for each explosion.
-  function drawBooms() {
+  // Explosions in 4 flat steps: flash, fire, embers, smoke.
+  function drawBooms(cx, cy) {
     const DURATION = 400
     const now = performance.now()
     booms = booms.filter((b) => now - b.startedAt < DURATION)
     for (const b of booms) {
       const t = (now - b.startedAt) / DURATION
-      g.fillStyle = `rgba(243, 167, 18, ${1 - t})`
-      g.beginPath()
-      g.arc(b.x, b.y, b.r * (0.6 + t * 0.8), 0, Math.PI * 2)
-      g.fill()
-    }
-  }
-
-  function drawWorm(worm, pos, isActive) {
-    const team = teams[worm.team]
-    const color = team ? team.color : '#000'
-
-    // body
-    g.fillStyle = color
-    g.beginPath()
-    g.arc(pos.x, pos.y, WORM_RADIUS, 0, Math.PI * 2)
-    g.fill()
-
-    // eye, on the side it is facing
-    g.fillStyle = '#fff'
-    g.beginPath()
-    g.arc(pos.x + worm.facing * 2.5, pos.y - 2, 2, 0, Math.PI * 2)
-    g.fill()
-
-    // name and hp
-    g.font = '11px system-ui, sans-serif'
-    g.textAlign = 'center'
-    g.fillStyle = color
-    g.fillText(worm.name, pos.x, pos.y - 20)
-    g.fillStyle = '#1a1a1a'
-    g.fillText(String(worm.hp), pos.x, pos.y - 9)
-
-    // arrow over the worm whose turn it is
-    if (isActive) {
-      const bob = Math.sin(performance.now() / 150) * 2
-      const top = pos.y - 40 + bob
-      g.fillStyle = '#1a1a1a'
-      g.beginPath()
-      g.moveTo(pos.x - 6, top)
-      g.lineTo(pos.x + 6, top)
-      g.lineTo(pos.x, top + 8)
-      g.fill()
+      const x = b.x - cx
+      const y = b.y - cy
+      if (t < 0.25) screen.circle(x, y, b.r * 0.8, 'cream')
+      else if (t < 0.5) screen.circle(x, y, b.r, 'amber')
+      else if (t < 0.75) screen.circle(x, y, b.r * 0.85, 'orange')
+      else screen.circle(x, y, b.r * 0.5, 'slate')
     }
   }
 
   function drawHud() {
-    g.textAlign = 'left'
-    g.font = '16px system-ui, sans-serif'
-    g.fillStyle = '#1a1a1a'
+    screen.dither(0, 0, SCREEN_W, 18, 'black')
 
     const worm = state.worms.find((w) => w.id === state.activeWormId)
     if (state.phase === 'playing' && worm) {
-      const mine = isMyTurn() ? ' (você!)' : ''
-      g.fillText(`Vez de ${worm.name}${mine}  ·  ${state.timeLeft}s`, 16, 28)
+      const team = teams[worm.team]
+      let x = 8
+      const part = (str, color) => {
+        screen.text(str, x, 3, { color })
+        x += screen.measureText(str)
+      }
+      part('Vez de ', 'paper')
+      part(worm.name, team ? team.color : 'paper')
+      if (isMyTurn()) part(' (você!)', 'paper')
+      part(' · ', 'gray')
+      part(state.timeLeft + 's', state.timeLeft <= 5 ? 'coral' : 'paper')
     }
 
     // Wind: an arrow whose length shows the strength.
-    const cx = WORLD_W - 90
-    const cy = 22
-    const length = (state.wind / WIND_MAX) * 60
-    g.textAlign = 'center'
-    g.font = '12px system-ui, sans-serif'
-    g.fillText('vento', cx, cy + 22)
-    g.strokeStyle = '#1a1a1a'
-    g.lineWidth = 3
-    g.beginPath()
-    g.moveTo(cx, cy)
-    g.lineTo(cx + length, cy)
-    g.stroke()
-    if (Math.abs(length) > 4) {
+    const cx = SCREEN_W - 70
+    const cy = 9
+    const length = Math.round((state.wind / WIND_MAX) * 40)
+    screen.text('vento', cx - 52, 3, { color: 'silver', align: 'right' })
+    screen.rect(cx - 41, cy, 83, 1, 'slate')
+    screen.line(cx, cy, cx + length, cy, 'paper', 2)
+    if (Math.abs(length) > 3) {
       const dir = Math.sign(length)
-      g.beginPath()
-      g.moveTo(cx + length, cy)
-      g.lineTo(cx + length - dir * 7, cy - 5)
-      g.lineTo(cx + length - dir * 7, cy + 5)
-      g.fill()
+      screen.line(cx + length, cy, cx + length - dir * 4, cy - 4, 'paper')
+      screen.line(cx + length, cy, cx + length - dir * 4, cy + 4, 'paper')
     }
+
+    if (isMyTurn()) {
+      screen.dither(0, SCREEN_H - 16, SCREEN_W, 16, 'black')
+      screen.text(HELP, SCREEN_W / 2, SCREEN_H - 14, { color: 'paper', align: 'center' })
+    }
+  }
+
+  function drawGameOver() {
+    screen.dither(0, 0, SCREEN_W, SCREEN_H, 'black')
+    const title = state.winner ? `${state.winner} venceu!` : 'Ninguém venceu'
+    screen.text(title, SCREEN_W / 2 + 2, 132, { color: 'black', scale: 3, align: 'center' })
+    screen.text(title, SCREEN_W / 2, 130, { color: 'cream', scale: 3, align: 'center' })
+    drawPrompt(ctx.me.isHost ? 'Ⓐ jogar de novo' : 'Esperando o host…', 200)
+  }
+
+  function drawSetup() {
+    drawSky(0)
+    screen.rect(0, 296, SCREEN_W, SCREEN_H - 296, 'brown')
+    screen.rect(0, 292, SCREEN_W, 4, 'lime')
+    screen.rect(0, 296, SCREEN_W, 2, 'green')
+
+    screen.text('MINHOCAS', SCREEN_W / 2 + 3, 63, { color: 'blue', scale: 5, align: 'center' })
+    screen.text('MINHOCAS', SCREEN_W / 2, 60, { color: 'paper', scale: 5, align: 'center' })
+    screen.text('Cada jogador comanda 3 minhocas. Último time vivo vence.', SCREEN_W / 2, 130, {
+      color: 'navy',
+      align: 'center',
+    })
+
+    if (ctx.me.isHost) {
+      screen.text(`◀  turno de ${turnTime}s  ▶`, SCREEN_W / 2, 168, {
+        color: 'navy',
+        scale: 2,
+        align: 'center',
+      })
+      drawPrompt('Ⓐ começar', 214)
+    } else {
+      drawPrompt('Esperando o host começar…', 214)
+    }
+
+    screen.text(HELP, SCREEN_W / 2, 320, { color: 'sand', align: 'center' })
+  }
+
+  // A blinking line of text, scale 2.
+  function drawPrompt(str, y) {
+    if (Math.floor(performance.now() / 500) % 2 === 0) return
+    screen.text(str, SCREEN_W / 2, y, { color: 'paper', scale: 2, align: 'center' })
   }
 
   // --- start ---
 
-  showSetup()
   draw()
   ctx.send('hi', {})
 
   return {
     stop() {
       cancelAnimationFrame(frame)
-      window.removeEventListener('keydown', onKey)
-      window.removeEventListener('keyup', onKey)
+      input.destroy()
+      screen.destroy()
     },
   }
 }
 
+// A "random" number that is always the same for the same (x, y): texture without noise() calls.
+function speckle(x, y) {
+  let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663)
+  h = Math.imul(h ^ (h >>> 13), 1274126177)
+  return (h ^ (h >>> 16)) >>> 0
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value))
+}
+
 // Paints the terrain mask into an offscreen canvas once, so each frame is just
 // one drawImage. Repainted after every explosion.
+//   top 2 px: light grass · next 2: dark grass · below: dirt with dark specks
 function drawTerrainImage(terrain) {
   const image = document.createElement('canvas')
   image.width = WORLD_W
@@ -343,7 +417,10 @@ function drawTerrainImage(terrain) {
         continue
       }
       depth++
-      const color = depth <= 4 ? GRASS : DIRT
+      let color = DIRT
+      if (depth <= 2) color = GRASS
+      else if (depth <= 4) color = GRASS_DARK
+      else if (speckle(x, y) % 7 === 0) color = DIRT_DARK
       data[i * 4] = color[0]
       data[i * 4 + 1] = color[1]
       data[i * 4 + 2] = color[2]

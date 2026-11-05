@@ -1,15 +1,32 @@
-// Cursors: everyone sees everyone's mouse. A test toy for the platform.
+// Cursors: everyone sees everyone's mouse. The test toy for the platform
+// and for the FR-6 hardware (screen, palette, font).
 //
 // It has no host half: the platform forwards every message to everyone,
 // so each client sends its own position and draws all the positions it receives
 // (including its own, which comes back through the host).
 
-const COLORS = ['#e4572e', '#29335c', '#f3a712', '#669bbc', '#4c956c', '#8e5572']
+import { createScreen } from '../../hw/screen.js'
+import { PALETTE, playerColorName } from '../../hw/palette.js'
 
-function colorFor(players, id) {
-  const index = players.findIndex((p) => p.id === id)
-  return COLORS[(index >= 0 ? index : 0) % COLORS.length]
+// Mouse pointer, drawn at 2x. 'c' = the player's color, 'k' = outline.
+const ARROW = {
+  colors: { k: 'black', c: 'paper' },
+  pixels: [
+    'k.......',
+    'kk......',
+    'kck.....',
+    'kcck....',
+    'kccck...',
+    'kcccck..',
+    'kccccck.',
+    'kcccckkk',
+    'kckck...',
+    'kk.kck..',
+    'k...kk..',
+  ],
 }
+
+const FONT_SAMPLE = 'FR-6 · Olá, ação! Você é ótimo? 0123456789'
 
 export default {
   id: 'cursors',
@@ -17,20 +34,33 @@ export default {
   description: 'Todo mundo vê o mouse de todo mundo. Toy de teste.',
   minPlayers: 1,
   maxPlayers: 6,
+  icon: {
+    colors: { a: 'amber', c: 'coral', k: 'ink', m: 'mint', n: 'night', w: 'paper' },
+    pixels: [
+      'nnnnnnnnnnnnnnnn',
+      'nwnnnnnnnnnnnnnn',
+      'nwwnnnnnnnnmmnnn',
+      'nwkwnnnnnnnmmnnn',
+      'nwkkwnnnnnnnnnnn',
+      'nwkkkwnnnnnnnnnn',
+      'nwkkkkwnnnnnnnnn',
+      'nwkkkkkwnnnnnnnn',
+      'nwkkwwwwnnnnnnnn',
+      'nwkwnnnnnnnnnnnn',
+      'nwwnnnnnnnnnnnnn',
+      'nwnnnnnnnnnnaann',
+      'nnnnnccnnnnnaann',
+      'nnnnnccnnnnnnnnn',
+      'nnnnnnnnnnnnnnnn',
+      'nnnnnnnnnnnnnnnn',
+    ],
+  },
 
   client(ctx) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 900
-    canvas.height = 560
-    canvas.style.width = '100%'
-    canvas.style.background = '#fff'
-    canvas.style.border = '2px solid #1a1a1a'
-    canvas.style.borderRadius = '8px'
-    canvas.style.cursor = 'none'
-    ctx.root.append(canvas)
-    const g = canvas.getContext('2d')
+    const screen = createScreen(ctx.root)
+    screen.canvas.style.cursor = 'none'
 
-    // playerId -> { x, y } in 0..1 (so it works at any screen size)
+    // playerId -> { x, y } in screen pixels
     const cursors = {}
 
     // --- input: send our position, at most ~30 times per second ---
@@ -40,13 +70,9 @@ export default {
       const now = performance.now()
       if (now - lastSent < 33) return
       lastSent = now
-      const rect = canvas.getBoundingClientRect()
-      ctx.send('move', {
-        x: (event.clientX - rect.left) / rect.width,
-        y: (event.clientY - rect.top) / rect.height,
-      })
+      ctx.send('move', screen.toScreen(event))
     }
-    canvas.addEventListener('pointermove', onMove)
+    screen.canvas.addEventListener('pointermove', onMove)
 
     // --- network: someone moved ---
 
@@ -62,20 +88,43 @@ export default {
 
     // --- draw ---
 
+    function drawBackground() {
+      screen.clear('night')
+      for (let y = 8; y < screen.height; y += 16) {
+        for (let x = 8; x < screen.width; x += 16) screen.pixel(x, y, 'purple')
+      }
+      screen.text('CURSORES', 16, 12, { color: 'violet', scale: 2 })
+      screen.text('Mexa o mouse. Todo mundo vê.', 16, 40, { color: 'silver' })
+    }
+
+    // The hardware test strip: font sample + all 32 palette colors.
+    function drawTestStrip() {
+      screen.dither(0, 300, screen.width, 60, 'black')
+      screen.text(FONT_SAMPLE, 16, 306, { color: 'paper' })
+      const names = Object.keys(PALETTE)
+      const size = 18
+      names.forEach((name, i) => {
+        screen.rect(16 + i * size, 326, size, 18, name)
+      })
+    }
+
+    function drawCursor(player, { x, y }) {
+      const color = playerColorName(player.color)
+      screen.sprite(ARROW, x, y, { scale: 2, colors: { c: color } })
+
+      const label = player.name + (player.id === ctx.me.id ? ' (você)' : '')
+      const width = screen.measureText(label) + 6
+      screen.rect(x + 14, y + 22, width, 13, color)
+      screen.text(label, x + 17, y + 22, { color: 'black' })
+    }
+
     let frame = 0
     function draw() {
-      g.clearRect(0, 0, canvas.width, canvas.height)
-      g.font = '14px system-ui, sans-serif'
+      drawBackground()
+      drawTestStrip()
       for (const id in cursors) {
         const player = ctx.players.find((p) => p.id === id)
-        if (!player) continue
-        const x = cursors[id].x * canvas.width
-        const y = cursors[id].y * canvas.height
-        g.fillStyle = colorFor(ctx.players, id)
-        g.beginPath()
-        g.arc(x, y, 8, 0, Math.PI * 2)
-        g.fill()
-        g.fillText(player.name + (id === ctx.me.id ? ' (você)' : ''), x + 12, y + 4)
+        if (player) drawCursor(player, cursors[id])
       }
       frame = requestAnimationFrame(draw)
     }
@@ -84,7 +133,8 @@ export default {
     return {
       stop() {
         cancelAnimationFrame(frame)
-        canvas.removeEventListener('pointermove', onMove)
+        screen.canvas.removeEventListener('pointermove', onMove)
+        screen.destroy()
       },
     }
   },

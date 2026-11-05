@@ -38,9 +38,17 @@ frens/
   docs/
     SPEC.md            this file
     TOYS.md            how to build a toy
+    STYLEGUIDE.md      art direction: console + hardware
   src/
     main.js            router: home screen <-> room screen
-    style.css
+    style.css          console styles
+    tokens.css         console design tokens (colors, type, spacing, motion)
+    console/           boot, pixel logo, toy icons
+    hw/                the FR-6 "hardware" toys draw on
+      screen.js        640x360 screen, drawing with palette names
+      font.js          5x7 bitmap system font
+      input.js         standard buttons (arrows, Z, X, Enter)
+      palette.js       the 32 FR-6 colors
     net/room.js        the only file that talks to PeerJS
     lobby/home.js      create / join a room
     lobby/room-view.js player list, link, toy picker, start button
@@ -129,7 +137,9 @@ PeerJS connections use `serialization: 'json'`, so every message must be plain J
 | host → all      | `toyStart` | `{ toyId }`                               | Mount this toy |
 | host → all      | `toyStop`  | `{}`                                      | Back to the lobby |
 
-A **player** is `{ id, name, isHost }`. `id` is the PeerJS id.
+A **player** is `{ id, name, isHost, color }`. `id` is the PeerJS id. `color` is the
+player's color slot (0..5): the host is 0, each newcomer takes the lowest free slot,
+and it never changes while they stay in the room. See docs/STYLEGUIDE.md.
 
 ## Room phases
 

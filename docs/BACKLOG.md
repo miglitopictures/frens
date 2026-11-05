@@ -15,7 +15,10 @@ Things we decided to do later. Most important first.
 
 ## Look and feel
 
-- [ ] Refine the visual style of the whole platform and all toys together.
+- [x] Art direction: FR-6 console + hardware (docs/STYLEGUIDE.md). Console shell,
+  hardware module, and all toys ported.
+- [ ] Boot chime: browsers block it on a first visit. Maybe a "press Ⓐ" moment.
+- [ ] Toy icons: repaint the placeholder 16x16 icons.
 
 ## Toys
 
@@ -23,3 +26,4 @@ Things we decided to do later. Most important first.
 - [x] Worms clone (teams of 3, wind, bazooka, destructible terrain)
 - [ ] Gartic: paint bucket, undo
 - [ ] Worms: more weapons (grenade with bounce), fall damage, gravestones
+- [ ] Worms: look around the map (move the camera by hand)

@@ -1,11 +1,29 @@
-// Client half of Gartic: canvas, tools, chat and the screens.
+// Client half of Gartic, drawn entirely on the FR-6 screen.
 // Only the current drawer can draw; everyone else just paints what arrives.
+//
+// Screen layout (640 x 360):
+//
+//   ┌──────────────── top bar: round · hint · time ────────────────┐
+//   │ ┌──────── board 400x300 ────────┐  ┌── players ──┐           │
+//   │ │                               │  ├── chat ─────┤           │
+//   │ └───────────────────────────────┘  │             │           │
+//   │  tools (drawer) / status            └── [typing] ┘           │
+//   └──────────────────────────────────────────────────────────────┘
+//
+// Menus and dialogs are drawn on the screen too. They can be clicked, and also
+// used with the FR-6 buttons (arrows + Ⓐ).
+//
+// Typing: a hidden <input> catches the keyboard (and opens the phone keyboard);
+// what is typed is drawn on the screen with the system font.
 
+import { createScreen, createLayer, SCREEN_W, SCREEN_H } from '../../hw/screen.js'
+import { createInput } from '../../hw/input.js'
+import { PALETTE, playerColorName } from '../../hw/palette.js'
 import {
-  CANVAS_W,
-  CANVAS_H,
+  BOARD_W,
+  BOARD_H,
   COLORS,
-  ERASER,
+  PAPER,
   SIZES,
   ROUND_OPTIONS,
   DEFAULT_ROUNDS,
@@ -14,98 +32,75 @@ import {
   SEND_STROKE_EVERY_MS,
   MAX_CHAT_LENGTH,
 } from './constants.js'
-import { THEMES, normalize } from './words.js'
+import { THEMES, normalize, parseCustomWords } from './words.js'
+
+// --- layout (screen pixels) ---
+
+const TOP_H = 28 // top bar
+const BX = 8 // board
+const BY = 34
+const RX = 416 // right column
+const RW = 216
+const PLAYERS_Y = 34
+const ROW_H = 14
+const CHAT_Y = 130
+const CHAT_H = 204
+const FIELD_Y = 338 // typing box, and tools row under the board
+const FIELD_H = 18
+const MAX_CUSTOM_WORDS_LENGTH = 300
+
+// Message colors on the dark chat panel.
+const KIND_COLORS = { normal: 'paper', system: 'mint', secret: 'violet', close: 'amber' }
 
 export function garticClient(ctx) {
-  ctx.root.innerHTML = `
-    <style>
-      .gartic-setup { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; max-width: 520px; }
-      .gartic-setup select { font: inherit; padding: 6px; }
-      .gartic-setup fieldset { border: 2px solid #1a1a1a; border-radius: 8px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
-      .gartic-setup textarea { font: inherit; width: 100%; min-height: 70px; padding: 8px; border: 2px solid #1a1a1a; border-radius: 8px; }
-      .gartic-top { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; min-height: 1.6em; }
-      .gartic-hint { font-family: ui-monospace, monospace; font-size: 1.3rem; letter-spacing: 0.25em; }
-      .gartic-main { display: grid; grid-template-columns: 1fr 240px; gap: 12px; }
-      @media (max-width: 700px) { .gartic-main { grid-template-columns: 1fr; } }
-      .gartic-board { position: relative; }
-      .gartic-board canvas {
-        width: 100%; display: block; background: #fff; touch-action: none;
-        border: 2px solid #1a1a1a; border-radius: 8px;
-      }
-      .gartic-board.can-draw canvas { cursor: crosshair; }
-      .gartic-overlay {
-        position: absolute; inset: 0; display: flex;
-        align-items: center; justify-content: center; text-align: center;
-        border-radius: 8px; font-size: 1.2rem;
-      }
-      .gartic-overlay.dim { background: rgba(255, 255, 255, 0.9); }
-      .gartic-card {
-        display: flex; flex-direction: column; gap: 10px; align-items: center;
-        padding: 16px 20px; background: #fff; border: 2px solid #1a1a1a; border-radius: 8px;
-      }
-      .gartic-card p { margin: 0; }
-      .gartic-card ol { text-align: left; margin: 0; }
-      .gartic-choices { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-      .gartic-tools { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
-      .gartic-tools button { padding: 6px 10px; }
-      .gartic-tools .swatch { width: 32px; height: 32px; padding: 0; }
-      .gartic-tools .selected { outline: 3px solid #1a1a1a; outline-offset: 2px; }
-      .gartic-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-      .gartic-players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-      .gartic-players li {
-        display: flex; justify-content: space-between; padding: 6px 8px;
-        border: 2px solid #1a1a1a; border-radius: 8px; background: #fff;
-      }
-      .gartic-players li.drawing { background: #1a1a1a; color: #fff; }
-      .gartic-players li.guessed { background: #d8f0e0; }
-      .gartic-chat { display: flex; flex-direction: column; border: 2px solid #1a1a1a; border-radius: 8px; background: #fff; }
-      .gartic-messages { list-style: none; margin: 0; padding: 8px; height: 260px; overflow-y: auto; font-size: 0.9rem; }
-      .gartic-messages li { margin-bottom: 4px; word-wrap: break-word; }
-      .gartic-messages .system { font-weight: bold; color: #2d6a4f; }
-      .gartic-messages .secret { color: #2d6a4f; }
-      .gartic-messages .close { color: #b36b00; font-style: italic; }
-      .gartic-chat form { display: flex; border-top: 2px solid #1a1a1a; }
-      .gartic-chat input { border: 0; border-radius: 0 0 8px 8px; }
-    </style>
+  const screen = createScreen(ctx.root)
+  const input = createInput()
+  const board = createLayer(BOARD_W, BOARD_H)
+  const background = createLayer(SCREEN_W, SCREEN_H)
+  paintBackground(background)
+  board.clear(PAPER)
 
-    <div class="gartic-setup"></div>
+  // The hidden text field. Its value is drawn on the screen.
+  const field = document.createElement('input')
+  field.className = 'hw-keyboard'
+  field.autocomplete = 'off'
+  ctx.root.append(field)
+  let typingFor = 'chat' // 'chat' | 'words'
 
-    <div class="gartic-game" hidden>
-      <div class="gartic-top">
-        <strong class="gartic-status"></strong>
-        <span class="gartic-hint"></span>
-        <span class="gartic-time"></span>
-      </div>
-      <div class="gartic-main">
-        <div>
-          <div class="gartic-board">
-            <canvas width="${CANVAS_W}" height="${CANVAS_H}"></canvas>
-            <div class="gartic-overlay" hidden></div>
-          </div>
-          <div class="gartic-tools" hidden></div>
-        </div>
-        <div class="gartic-side">
-          <ul class="gartic-players"></ul>
-          <div class="gartic-chat">
-            <ul class="gartic-messages"></ul>
-            <form><input maxlength="${MAX_CHAT_LENGTH}" placeholder="Seu chute..." /></form>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
-
-  const $ = (selector) => ctx.root.querySelector(selector)
-  const canvas = $('canvas')
-  const g = canvas.getContext('2d')
-
-  let state = null
+  let state = null // null = setup screen
   let myWord = null // the secret word, if I'm drawing or already guessed it
   let choices = [] // the 3 words, if I'm choosing
+  let choiceIndex = 0
+  let messages = [] // chat: { id, name, text, kind }
+  let lastTurn = { word: null, drawer: '' } // for the file name when saving the drawing
+
+  // setup screen (host)
+  const setup = {
+    row: 0,
+    rounds: DEFAULT_ROUNDS,
+    drawTime: DEFAULT_DRAW_TIME,
+    themes: THEMES.map((t) => t.id),
+    customWords: '',
+  }
+
+  // drawing tools
+  let color = COLORS[0]
+  let size = SIZES[1]
+
+  // Clickable areas, rebuilt every frame by the drawing code: { x, y, w, h, onClick }
+  let hits = []
+  function clickable(x, y, w, h, onClick) {
+    hits.push({ x, y, w, h, onClick })
+  }
 
   function nameOf(id) {
     const player = ctx.players.find((p) => p.id === id)
     return player ? player.name : '?'
+  }
+
+  function colorOf(id) {
+    const player = ctx.players.find((p) => p.id === id)
+    return player ? playerColorName(player.color) : 'paper'
   }
 
   function amDrawer() {
@@ -116,123 +111,129 @@ export function garticClient(ctx) {
     return Boolean(state && state.phase === 'drawing' && amDrawer())
   }
 
-  // --- painting (used for my own strokes and for the ones that arrive) ---
-
-  function clearCanvas() {
-    g.fillStyle = '#fff'
-    g.fillRect(0, 0, CANVAS_W, CANVAS_H)
+  function isTyping() {
+    return document.activeElement === field
   }
 
-  // points = [x0, y0, x1, y1, ...] in logical canvas coordinates
-  function paint(piece) {
-    const p = piece.points
-    g.strokeStyle = piece.color
-    g.fillStyle = piece.color
-    g.lineWidth = piece.size
-    g.lineCap = 'round'
-    g.lineJoin = 'round'
+  // --- typing ---
 
-    if (p.length === 2) {
-      // A single click: a dot.
-      g.beginPath()
-      g.arc(p[0], p[1], piece.size / 2, 0, Math.PI * 2)
-      g.fill()
+  function startTyping(kind) {
+    if (kind === 'words') {
+      field.maxLength = MAX_CUSTOM_WORDS_LENGTH
+      field.value = setup.customWords
+    } else {
+      field.maxLength = MAX_CHAT_LENGTH
+      if (typingFor !== 'chat') field.value = ''
+    }
+    typingFor = kind
+    field.focus({ preventScroll: true })
+  }
+
+  function stopTyping() {
+    field.blur()
+  }
+
+  function canChat() {
+    return Boolean(state) && !amDrawing() && state.phase !== 'over'
+  }
+
+  field.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') stopTyping()
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    if (typingFor === 'words') {
+      setup.customWords = field.value
+      stopTyping()
       return
     }
-    g.beginPath()
-    g.moveTo(p[0], p[1])
-    for (let i = 2; i < p.length; i += 2) g.lineTo(p[i], p[i + 1])
-    g.stroke()
+    const text = field.value.trim()
+    if (text && canChat()) ctx.send('chat', { text })
+    field.value = ''
+  })
+
+  field.addEventListener('input', () => {
+    if (typingFor === 'words') setup.customWords = field.value
+  })
+
+  // Guessers type all the time, so the field stays focused for them.
+  function autoFocusChat() {
+    if (canChat() && !amDrawer()) startTyping('chat')
+    else if (typingFor === 'chat') stopTyping()
   }
 
-  // --- tools (only visible for the drawer) ---
+  // --- painting strokes on the board ---
 
-  let color = COLORS[0]
-  let size = SIZES[1]
-
-  function renderTools() {
-    const tools = $('.gartic-tools')
-    tools.innerHTML = ''
-
-    for (const c of COLORS) {
-      const button = document.createElement('button')
-      button.className = 'swatch' + (c === color ? ' selected' : '')
-      button.style.background = c
-      button.title = 'Cor'
-      button.addEventListener('click', () => {
-        color = c
-        renderTools()
-      })
-      tools.append(button)
+  // points = [x0, y0, x1, y1, ...] in board pixels
+  function paint(piece) {
+    if (!PALETTE[piece.color]) return // not a palette color: ignore
+    const p = piece.points
+    const s = SIZES.includes(piece.size) ? piece.size : SIZES[1]
+    if (p.length === 2) {
+      if (s <= 1) board.pixel(p[0], p[1], piece.color)
+      else board.circle(p[0], p[1], Math.floor(s / 2), piece.color)
+      return
     }
-
-    const eraser = document.createElement('button')
-    eraser.textContent = 'Borracha'
-    eraser.className = color === ERASER ? 'selected' : ''
-    eraser.addEventListener('click', () => {
-      color = ERASER
-      renderTools()
-    })
-    tools.append(eraser)
-
-    SIZES.forEach((s, i) => {
-      const button = document.createElement('button')
-      button.textContent = ['P', 'M', 'G'][i]
-      button.title = 'Tamanho do pincel'
-      button.className = s === size ? 'selected' : ''
-      button.addEventListener('click', () => {
-        size = s
-        renderTools()
-      })
-      tools.append(button)
-    })
-
-    const clear = document.createElement('button')
-    clear.textContent = 'Limpar'
-    clear.addEventListener('click', () => {
-      clearCanvas()
-      ctx.send('clear', {})
-    })
-    tools.append(clear)
+    for (let i = 2; i < p.length; i += 2) {
+      board.line(p[i - 2], p[i - 1], p[i], p[i + 1], piece.color, s)
+    }
   }
 
   // --- drawing with the mouse / finger / pen ---
 
-  let drawing = false
+  let stroking = false
   let pending = [] // points not sent yet
   let lastPoint = null // last point already sent, so pieces connect
 
-  function toCanvas(event) {
-    const rect = canvas.getBoundingClientRect()
-    return [
-      Math.round(((event.clientX - rect.left) / rect.width) * CANVAS_W),
-      Math.round(((event.clientY - rect.top) / rect.height) * CANVAS_H),
-    ]
+  function toBoard(event) {
+    const { x, y } = screen.toScreen(event)
+    return [x - BX, y - BY]
   }
 
-  function onDown(event) {
-    if (!amDrawing()) return
-    drawing = true
-    canvas.setPointerCapture(event.pointerId)
-    const [x, y] = toCanvas(event)
-    lastPoint = null
-    pending = [x, y]
-    paint({ color, size, points: pending })
+  function insideBoard(x, y) {
+    return x >= BX && x < BX + BOARD_W && y >= BY && y < BY + BOARD_H
   }
 
-  function onMove(event) {
-    if (!drawing) return
-    const [x, y] = toCanvas(event)
+  function onPointerDown(event) {
+    // Clicking the screen must not take the focus away from the text field.
+    event.preventDefault()
+    const { x, y } = screen.toScreen(event)
+
+    if (amDrawing() && insideBoard(x, y)) {
+      stroking = true
+      screen.canvas.setPointerCapture(event.pointerId)
+      const [bx, by] = toBoard(event)
+      lastPoint = null
+      pending = [bx, by]
+      paint({ color, size, points: pending })
+      return
+    }
+
+    // Clickable things drawn in the last frame (last one drawn = on top).
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const h = hits[i]
+      if (x >= h.x && x < h.x + h.w && y >= h.y && y < h.y + h.h) {
+        h.onClick()
+        return
+      }
+    }
+
+    // Clicking the chat area starts typing.
+    if (x >= RX && y >= CHAT_Y && canChat()) startTyping('chat')
+  }
+
+  function onPointerMove(event) {
+    if (!stroking) return
+    const [x, y] = toBoard(event)
     const px = pending.length ? pending[pending.length - 2] : lastPoint[0]
     const py = pending.length ? pending[pending.length - 1] : lastPoint[1]
-    if (Math.abs(x - px) + Math.abs(y - py) < 2) return // ignore tiny moves
+    if (Math.abs(x - px) + Math.abs(y - py) < 1) return // ignore tiny moves
     paint({ color, size, points: [px, py, x, y] }) // draw locally right away
     pending.push(x, y)
   }
 
-  function onUp() {
-    if (!drawing) return
-    drawing = false
+  function onPointerUp() {
+    if (!stroking) return
+    stroking = false
     flush()
     lastPoint = null
   }
@@ -247,263 +248,131 @@ export function garticClient(ctx) {
   }
 
   const flushTimer = setInterval(() => {
-    if (drawing) flush()
+    if (stroking) flush()
   }, SEND_STROKE_EVERY_MS)
 
-  canvas.addEventListener('pointerdown', onDown)
-  canvas.addEventListener('pointermove', onMove)
-  canvas.addEventListener('pointerup', onUp)
-  canvas.addEventListener('pointercancel', onUp)
+  screen.canvas.addEventListener('pointerdown', onPointerDown)
+  screen.canvas.addEventListener('pointermove', onPointerMove)
+  screen.canvas.addEventListener('pointerup', onPointerUp)
+  screen.canvas.addEventListener('pointercancel', onPointerUp)
 
-  // --- setup screen ---
+  // --- actions (shared by clicks and buttons) ---
 
-  function showSetup() {
-    state = null
-    myWord = null
-    $('.gartic-game').hidden = true
-    $('.gartic-setup').hidden = false
-    $('.gartic-messages').innerHTML = ''
+  // The setup menu, one row per item.
+  function setupRows() {
+    return [
+      { label: 'Rodadas', value: () => String(setup.rounds), change: (d) => (setup.rounds = step(ROUND_OPTIONS, setup.rounds, d)) },
+      { label: 'Tempo pra desenhar', value: () => setup.drawTime + 's', change: (d) => (setup.drawTime = step(DRAW_TIME_OPTIONS, setup.drawTime, d)) },
+      ...THEMES.map((theme) => ({
+        label: theme.name,
+        check: () => setup.themes.includes(theme.id),
+        change: () => toggleTheme(theme.id),
+      })),
+      { label: 'Palavras próprias', value: customWordsLabel, change: () => startTyping('words') },
+      { label: 'Ⓐ Começar', start: true, change: startGame },
+    ]
+  }
 
-    if (!ctx.me.isHost) {
-      $('.gartic-setup').innerHTML = '<p>Esperando o host iniciar a partida...</p>'
-      return
-    }
+  function step(list, current, direction) {
+    const i = list.indexOf(current)
+    return list[(i + direction + list.length) % list.length]
+  }
 
-    const options = (list, chosen, label) =>
-      list.map((v) => `<option value="${v}" ${v === chosen ? 'selected' : ''}>${v} ${label}</option>`).join('')
-    const themeBoxes = THEMES.map(
-      (t) => `<label><input type="checkbox" value="${t.id}" checked /> ${t.name}</label>`,
-    ).join('')
+  function toggleTheme(id) {
+    if (setup.themes.includes(id)) setup.themes = setup.themes.filter((t) => t !== id)
+    else setup.themes = [...setup.themes, id]
+  }
 
-    $('.gartic-setup').innerHTML = `
-      <p>Um desenha, os outros adivinham. Cada jogador desenha uma vez por rodada.</p>
-      <label>Rodadas <select class="rounds">${options(ROUND_OPTIONS, DEFAULT_ROUNDS, '')}</select></label>
-      <label>Tempo pra desenhar <select class="time">${options(DRAW_TIME_OPTIONS, DEFAULT_DRAW_TIME, 'segundos')}</select></label>
-      <fieldset>
-        <legend>Temas</legend>
-        ${themeBoxes}
-      </fieldset>
-      <label style="width: 100%">Palavras próprias (opcional, separadas por vírgula ou linha)
-        <textarea class="custom" placeholder="ex: tio do pavê, churrasco da firma, gato da Ana"></textarea>
-      </label>
-      <p class="muted">Desmarque todos os temas pra jogar só com as suas palavras.</p>
-      <button>Iniciar partida</button>
-    `
-    $('.gartic-setup button').addEventListener('click', () => {
-      const themes = [...ctx.root.querySelectorAll('.gartic-setup input[type=checkbox]:checked')].map(
-        (box) => box.value,
-      )
-      ctx.send('start', {
-        rounds: Number($('.gartic-setup .rounds').value),
-        drawTime: Number($('.gartic-setup .time').value),
-        themes,
-        customWords: $('.gartic-setup .custom').value,
-      })
+  function customWordsLabel() {
+    const count = parseCustomWords(setup.customWords).length
+    return count === 0 ? 'nenhuma' : count === 1 ? '1 palavra' : `${count} palavras`
+  }
+
+  function startGame() {
+    stopTyping()
+    ctx.send('start', {
+      rounds: setup.rounds,
+      drawTime: setup.drawTime,
+      themes: setup.themes,
+      customWords: setup.customWords,
     })
   }
 
-  // --- game screen ---
+  function chooseWord(index) {
+    ctx.send('choose', { index })
+  }
 
-  function renderGame() {
-    $('.gartic-setup').hidden = true
-    $('.gartic-game').hidden = false
+  function clearBoard() {
+    board.clear(PAPER)
+    ctx.send('clear', {})
+  }
 
-    // Top line: round, who draws, the hint and the time.
-    let status = `Rodada ${state.round}/${state.rounds}`
-    let hint = ''
-    if (state.phase === 'choosing') {
-      status += amDrawer() ? ' · Escolha uma palavra' : ` · ${nameOf(state.drawerId)} está escolhendo...`
-    } else if (state.phase === 'drawing') {
-      if (amDrawer()) {
-        status += ' · Desenhe:'
-        hint = myWord || ''
-      } else if (myWord) {
-        status += ' · Você acertou!'
-        hint = myWord
-      } else {
-        status += ` · ${nameOf(state.drawerId)} está desenhando`
-        hint = state.hint
+  // --- FR-6 buttons ---
+
+  input.onPress((button) => {
+    // Setup menu (host)
+    if (!state) {
+      if (!ctx.me.isHost) return
+      const rows = setupRows()
+      if (button === 'up') setup.row = (setup.row - 1 + rows.length) % rows.length
+      if (button === 'down') setup.row = (setup.row + 1) % rows.length
+      const row = rows[setup.row]
+      if ((button === 'left' || button === 'right') && row.value && !row.start) {
+        if (row.label !== 'Palavras próprias') row.change(button === 'left' ? -1 : 1)
       }
-    }
-    $('.gartic-status').textContent = status
-    $('.gartic-hint').textContent = hint
-    $('.gartic-time').textContent = state.phase === 'over' ? '' : `${state.timeLeft}s`
-
-    // Tools
-    $('.gartic-board').classList.toggle('can-draw', amDrawing())
-    const toolsWereHidden = $('.gartic-tools').hidden
-    $('.gartic-tools').hidden = !amDrawing()
-    if (toolsWereHidden && amDrawing()) renderTools()
-
-    // Chat input: the drawer can't chat while drawing.
-    const input = $('.gartic-chat input')
-    input.disabled = amDrawing()
-    input.placeholder = amDrawing() ? 'Você está desenhando' : 'Seu chute...'
-
-    renderOverlay()
-    renderPlayers()
-  }
-
-  // Downloads what is on the canvas as a PNG.
-  // Remembers the last finished turn so the final drawing can be saved too.
-  let lastTurn = { word: null, drawer: '' }
-
-  function saveDrawing() {
-    const name = normalize(`${lastTurn.word || 'desenho'} ${lastTurn.drawer}`).replace(/[^a-z0-9]+/g, '-')
-    const link = document.createElement('a')
-    link.download = `frens-gartic-${name}.png`
-    link.href = canvas.toDataURL('image/png')
-    link.click()
-  }
-
-  function saveButton(parent) {
-    const button = document.createElement('button')
-    button.textContent = 'Salvar desenho'
-    button.addEventListener('click', saveDrawing)
-    parent.append(button)
-  }
-
-  // The overlay only rebuilds when its content changes, so buttons keep working.
-  // While choosing it hides the canvas; after a turn it is a small card so the
-  // drawing stays visible.
-  let overlayKey = ''
-  function renderOverlay() {
-    const overlay = $('.gartic-overlay')
-    const key = [state.phase, state.drawerId, choices.join(','), state.word].join('|')
-    overlay.hidden = state.phase === 'drawing'
-    if (key === overlayKey) return
-    overlayKey = key
-    overlay.innerHTML = ''
-    overlay.classList.toggle('dim', state.phase === 'choosing')
-
-    if (state.phase === 'between') {
-      lastTurn = { word: state.word, drawer: nameOf(state.drawerId) }
+      if (button === 'a') row.change(1)
+      return
     }
 
-    const card = document.createElement('div')
-    card.className = 'gartic-card'
-    overlay.append(card)
-
-    const text = (t, tag = 'p') => {
-      const el = document.createElement(tag)
-      el.textContent = t
-      card.append(el)
-      return el
+    // Picking a word
+    if (state.phase === 'choosing' && amDrawer() && choices.length) {
+      if (button === 'left' || button === 'up') choiceIndex = (choiceIndex + choices.length - 1) % choices.length
+      if (button === 'right' || button === 'down') choiceIndex = (choiceIndex + 1) % choices.length
+      if (button === 'a') chooseWord(choiceIndex)
+      return
     }
 
-    if (state.phase === 'choosing' && amDrawer()) {
-      text('Escolha uma palavra pra desenhar:')
-      const row = document.createElement('div')
-      row.className = 'gartic-choices'
-      choices.forEach((word, index) => {
-        const button = document.createElement('button')
-        button.textContent = word
-        button.addEventListener('click', () => ctx.send('choose', { index }))
-        row.append(button)
-      })
-      card.append(row)
-    } else if (state.phase === 'choosing') {
-      text(`${nameOf(state.drawerId)} está escolhendo uma palavra...`)
-    } else if (state.phase === 'between') {
-      text(state.word ? 'A palavra era' : 'Turno cancelado')
-      if (state.word) {
-        text(state.word, 'strong')
-        saveButton(card)
-      }
-    } else if (state.phase === 'over') {
-      text('Fim de jogo!', 'strong')
-      const list = document.createElement('ol')
-      for (const p of ranking()) {
-        const li = document.createElement('li')
-        li.textContent = `${p.name} — ${p.score} pontos`
-        list.append(li)
-      }
-      card.append(list)
-      if (lastTurn.word) saveButton(card)
-      if (ctx.me.isHost) {
-        const again = document.createElement('button')
-        again.textContent = 'Jogar de novo'
-        again.addEventListener('click', () => ctx.send('again', {}))
-        card.append(again)
-      }
-    }
-  }
-
-  function ranking() {
-    return ctx.players
-      .map((p) => ({ name: p.name, score: (state && state.scores[p.id]) || 0 }))
-      .sort((a, b) => b.score - a.score)
-  }
-
-  function renderPlayers() {
-    const list = $('.gartic-players')
-    list.innerHTML = ''
-    for (const p of ctx.players) {
-      const li = document.createElement('li')
-      const name = document.createElement('span')
-      const score = document.createElement('span')
-      name.textContent = p.name + (p.id === ctx.me.id ? ' (você)' : '')
-      score.textContent = state ? (state.scores[p.id] || 0) + ' pts' : ''
-      li.append(name, score)
-      if (state && state.phase === 'drawing') {
-        if (p.id === state.drawerId) li.className = 'drawing'
-        else if (state.guessed.includes(p.id)) li.className = 'guessed'
-      }
-      list.append(li)
-    }
-  }
-
-  // --- chat ---
-
-  function addMessage({ name, text, kind }) {
-    const list = $('.gartic-messages')
-    const li = document.createElement('li')
-    li.className = kind
-    if (name) {
-      const who = document.createElement('strong')
-      who.textContent = name + ': '
-      li.append(who)
-    }
-    li.append(document.createTextNode(text))
-    list.append(li)
-    while (list.children.length > 100) list.firstChild.remove()
-    list.scrollTop = list.scrollHeight
-  }
-
-  $('.gartic-chat form').addEventListener('submit', (event) => {
-    event.preventDefault()
-    const input = $('.gartic-chat input')
-    const text = input.value.trim()
-    if (text) ctx.send('chat', { text })
-    input.value = ''
+    if (state.phase === 'over' && button === 'a' && ctx.me.isHost) ctx.send('again', {})
   })
 
   // --- network ---
 
-  ctx.on('setup', showSetup)
+  ctx.on('setup', () => {
+    state = null
+    myWord = null
+    messages = []
+    board.clear(PAPER)
+    stopTyping()
+  })
 
   ctx.on('state', (data) => {
     const wasDrawing = amDrawing()
-    if (data.phase === 'choosing' && (!state || state.phase !== 'choosing')) {
+    const oldPhase = state ? state.phase : null
+    if (data.phase === 'choosing' && oldPhase !== 'choosing') {
       myWord = null // a new turn started
+      choiceIndex = 0
+    }
+    if (data.phase === 'between' && oldPhase !== 'between') {
+      lastTurn = { word: data.word, drawer: nameOf(data.drawerId) }
     }
     if (data.phase !== 'choosing') choices = []
     state = data
-    if (wasDrawing && !amDrawing()) onUp() // time ran out mid-stroke
-    renderGame()
+    if (wasDrawing && !amDrawing()) onPointerUp() // time ran out mid-stroke
+    if (data.phase !== oldPhase) autoFocusChat()
   })
 
   ctx.on('choices', (data) => {
     choices = data.words
-    if (state) renderGame()
   })
 
   ctx.on('word', (data) => {
     myWord = data.word
-    if (state) renderGame()
   })
 
-  ctx.on('chat', addMessage)
+  ctx.on('chat', (message) => {
+    messages.push(message)
+    if (messages.length > 60) messages.shift()
+  })
 
   ctx.on('draw', (piece) => {
     if (amDrawing()) return // I already painted my own strokes
@@ -511,25 +380,363 @@ export function garticClient(ctx) {
   })
 
   ctx.on('strokes', (data) => {
-    clearCanvas()
+    board.clear(PAPER)
     for (const piece of data.list) paint(piece)
   })
 
-  ctx.on('clear', clearCanvas)
+  ctx.on('clear', () => board.clear(PAPER))
 
-  ctx.onPlayersChange(() => {
-    if (state) renderPlayers()
-  })
+  // --- saving the drawing (PNG at 2x, sharp pixels) ---
+
+  function saveDrawing() {
+    const out = document.createElement('canvas')
+    out.width = BOARD_W * 2
+    out.height = BOARD_H * 2
+    const og = out.getContext('2d')
+    og.imageSmoothingEnabled = false
+    og.drawImage(board.canvas, 0, 0, out.width, out.height)
+    const name = normalize(`${lastTurn.word || 'desenho'} ${lastTurn.drawer}`).replace(/[^a-z0-9]+/g, '-')
+    const link = document.createElement('a')
+    link.download = `frens-gartic-${name}.png`
+    link.href = out.toDataURL('image/png')
+    link.click()
+  }
+
+  // ===================================================================
+  // Drawing the screen
+  // ===================================================================
+
+  const blink = () => Math.floor(performance.now() / 500) % 2 === 0
+
+  // A flat button: dark, or amber when selected. Registers a click area.
+  function button(label, x, y, w, h, { selected = false, onClick } = {}) {
+    screen.rect(x, y, w, h, selected ? 'amber' : 'slate')
+    screen.frame(x, y, w, h, 'black')
+    screen.text(label, x + w / 2, y + Math.floor((h - 12) / 2), {
+      color: selected ? 'black' : 'paper',
+      align: 'center',
+    })
+    if (onClick) clickable(x, y, w, h, onClick)
+  }
+
+  function panel(x, y, w, h) {
+    screen.rect(x, y, w, h, 'ink')
+    screen.frame(x, y, w, h, 'black')
+  }
+
+  let frame = 0
+  function draw() {
+    frame = requestAnimationFrame(draw)
+    hits = []
+    screen.drawLayer(background, 0, 0)
+
+    if (!state) {
+      drawSetup()
+      return
+    }
+
+    drawTopBar()
+    drawBoard()
+    drawPlayers()
+    drawChat()
+    drawField()
+    if (amDrawing()) drawTools()
+    else drawStatus()
+    drawDialog()
+  }
+
+  function drawTopBar() {
+    screen.rect(0, 0, SCREEN_W, TOP_H, 'ink')
+    screen.rect(0, TOP_H, SCREEN_W, 1, 'black')
+    screen.text(`Rodada ${state.round}/${state.rounds}`, 10, 8, { color: 'silver' })
+
+    let hint = ''
+    if (state.phase === 'drawing') hint = amDrawer() || myWord ? myWord || '' : state.hint || ''
+    if (hint) {
+      const spaced = [...hint].join(' ')
+      const known = amDrawer() || myWord
+      const big = screen.measureText(spaced, 2) <= 380 // long custom words: smaller
+      screen.text(spaced, SCREEN_W / 2, big ? 2 : 8, {
+        color: known ? 'mint' : 'cream',
+        scale: big ? 2 : 1,
+        align: 'center',
+      })
+    }
+
+    if (state.phase !== 'over') {
+      const color = state.timeLeft <= 10 ? 'coral' : 'paper'
+      screen.text(state.timeLeft + 's', SCREEN_W - 10, 2, { color, scale: 2, align: 'right' })
+    }
+  }
+
+  function drawBoard() {
+    screen.rect(BX + 3, BY + 3, BOARD_W, BOARD_H, 'black') // shadow
+    screen.drawLayer(board, BX, BY)
+    screen.frame(BX - 1, BY - 1, BOARD_W + 2, BOARD_H + 2, 'black')
+  }
+
+  function drawPlayers() {
+    const height = 6 * ROW_H + 6
+    panel(RX, PLAYERS_Y, RW, height)
+    ctx.players.forEach((p, i) => {
+      const y = PLAYERS_Y + 3 + i * ROW_H
+      const isDrawer = state.drawerId === p.id && state.phase !== 'over'
+      const guessed = state.phase === 'drawing' && state.guessed.includes(p.id)
+      if (isDrawer) screen.rect(RX + 1, y, RW - 2, ROW_H, 'slate')
+      screen.circle(RX + 10, y + 7, 3, playerColorName(p.color))
+      if (p.id === ctx.me.id) screen.circle(RX + 10, y + 7, 1, 'black')
+      let label = p.name
+      if (isDrawer) label += ' ✎'
+      if (guessed) label += ' ✓'
+      screen.text(label, RX + 18, y + 1, { color: guessed ? 'mint' : 'paper' })
+      const score = (state.scores[p.id] || 0) + ' pts'
+      screen.text(score, RX + RW - 6, y + 1, { color: 'silver', align: 'right' })
+    })
+  }
+
+  // Chat: wrap every message, show the newest lines that fit.
+  function drawChat() {
+    panel(RX, CHAT_Y, RW, CHAT_H)
+    const width = RW - 10
+    const lines = []
+    for (const m of messages) {
+      const full = m.name ? `${m.name}: ${m.text}` : m.text
+      screen.wrapText(full, width).forEach((text, i) => {
+        lines.push({ text, color: KIND_COLORS[m.kind] || 'paper', name: i === 0 && m.name ? m.name + ':' : '', id: m.id })
+      })
+    }
+    const fit = Math.floor((CHAT_H - 6) / screen.lineHeight)
+    lines.slice(-fit).forEach((line, i) => {
+      const y = CHAT_Y + 3 + i * screen.lineHeight
+      screen.text(line.text, RX + 5, y, { color: line.color })
+      // the name again, on top, in the player's color
+      if (line.name) screen.text(line.name, RX + 5, y, { color: colorOf(line.id) })
+    })
+  }
+
+  // The typing box under the chat.
+  function drawField() {
+    const active = canChat()
+    const focused = isTyping() && typingFor === 'chat'
+    screen.rect(RX, FIELD_Y, RW, FIELD_H, active ? 'paper' : 'slate')
+    screen.frame(RX, FIELD_Y, RW, FIELD_H, focused ? 'amber' : 'black')
+    clickable(RX, FIELD_Y, RW, FIELD_H, () => active && startTyping('chat'))
+
+    if (!active) {
+      const why = amDrawing() ? 'Você está desenhando' : ''
+      screen.text(why, RX + 6, FIELD_Y + 3, { color: 'silver' })
+      return
+    }
+    const value = typingFor === 'chat' ? field.value : ''
+    if (!value && !focused) {
+      screen.text('Clique pra chutar…', RX + 6, FIELD_Y + 3, { color: 'gray' })
+      return
+    }
+    drawTypedText(value, RX + 6, FIELD_Y + 3, RW - 12, focused)
+  }
+
+  // Typed text, showing only the end when it's too long, plus a blinking cursor.
+  function drawTypedText(value, x, y, width, focused) {
+    let shown = value
+    while (shown && screen.measureText(shown) > width - 4) shown = shown.slice(1)
+    screen.text(shown, x, y, { color: 'ink' })
+    if (focused && blink()) {
+      const cx = x + screen.measureText(shown) + (shown ? 1 : 0)
+      screen.rect(cx, y + 2, 1, 9, 'ink')
+    }
+  }
+
+  function drawTools() {
+    const y = FIELD_Y + 1
+    COLORS.forEach((c, i) => {
+      const x = BX + i * 16
+      screen.rect(x, y, 14, 14, c)
+      screen.frame(x, y, 14, 14, 'black')
+      if (c === color) screen.frame(x - 2, y - 2, 18, 18, 'paper')
+      clickable(x, y, 14, 14, () => (color = c))
+    })
+
+    // eraser: paints with the paper color
+    const ex = BX + 264
+    screen.rect(ex, y, 18, 14, 'ink')
+    screen.rect(ex + 3, y + 3, 6, 8, 'pink')
+    screen.rect(ex + 9, y + 3, 6, 8, PAPER)
+    screen.frame(ex, y, 18, 14, color === PAPER ? 'amber' : 'black')
+    clickable(ex, y, 18, 14, () => (color = PAPER))
+
+    // sizes: a dot as big as the brush
+    SIZES.forEach((s, i) => {
+      const x = ex + 24 + i * 18
+      screen.rect(x, y, 16, 14, 'ink')
+      screen.frame(x, y, 16, 14, s === size ? 'amber' : 'black')
+      if (s <= 1) screen.pixel(x + 8, y + 7, 'paper')
+      else screen.circle(x + 8, y + 7, Math.min(5, Math.floor(s / 2)), 'paper')
+      clickable(x, y, 16, 14, () => (size = s))
+    })
+
+    button('limpar', BX + BOARD_W - 50, y, 50, 14, { onClick: clearBoard })
+  }
+
+  // Under the board, when I'm not drawing: who is doing what.
+  function drawStatus() {
+    let text = ''
+    if (state.phase === 'drawing') {
+      text = myWord ? 'Você acertou! Agora é só torcer.' : `${nameOf(state.drawerId)} está desenhando. Chute no chat!`
+    } else if (state.phase === 'choosing') {
+      text = amDrawer() ? 'Sua vez de desenhar!' : `${nameOf(state.drawerId)} está escolhendo uma palavra…`
+    }
+    screen.text(text, BX, FIELD_Y + 3, { color: 'paper' })
+  }
+
+  // Dialogs on top of the board: choosing, "the word was", game over.
+  function drawDialog() {
+    const cx = BX + BOARD_W / 2
+
+    if (state.phase === 'choosing') {
+      screen.dither(BX, BY, BOARD_W, BOARD_H, 'black')
+      if (amDrawer() && choices.length) {
+        panel(cx - 120, BY + 60, 240, 150)
+        screen.text('Escolha uma palavra:', cx, BY + 72, { align: 'center' })
+        choices.forEach((word, i) => {
+          button(word, cx - 100, BY + 96 + i * 30, 200, 24, {
+            selected: i === choiceIndex,
+            onClick: () => chooseWord(i),
+          })
+        })
+      } else {
+        panel(cx - 130, BY + 120, 260, 40)
+        screen.text(`${nameOf(state.drawerId)} está escolhendo…`, cx, BY + 134, { align: 'center' })
+      }
+    }
+
+    if (state.phase === 'between') {
+      // At the bottom, so the drawing stays visible.
+      panel(BX + 40, BY + BOARD_H - 74, BOARD_W - 80, 66)
+      if (state.word) {
+        screen.text('A palavra era', cx, BY + BOARD_H - 68, { color: 'silver', align: 'center' })
+        screen.text(state.word, cx, BY + BOARD_H - 54, { color: 'cream', scale: 2, align: 'center' })
+        button('salvar desenho', cx - 50, BY + BOARD_H - 26, 100, 14, { onClick: saveDrawing })
+      } else {
+        screen.text('Turno cancelado', cx, BY + BOARD_H - 48, { align: 'center' })
+      }
+    }
+
+    if (state.phase === 'over') {
+      screen.dither(BX, BY, BOARD_W, BOARD_H, 'black')
+      panel(cx - 140, BY + 20, 280, 260)
+      screen.text('Fim de jogo!', cx, BY + 30, { color: 'cream', scale: 2, align: 'center' })
+      ranking().forEach((p, i) => {
+        const y = BY + 70 + i * 18
+        screen.text(`${i + 1}.`, cx - 110, y, { color: 'silver' })
+        screen.text(p.name, cx - 90, y, { color: playerColorName(p.color) })
+        screen.text(p.score + ' pts', cx + 110, y, { align: 'right' })
+      })
+      if (lastTurn.word) button('salvar desenho', cx - 60, BY + 196, 120, 16, { onClick: saveDrawing })
+      if (ctx.me.isHost) {
+        button('Ⓐ jogar de novo', cx - 70, BY + 222, 140, 24, {
+          selected: true,
+          onClick: () => ctx.send('again', {}),
+        })
+      } else if (blink()) {
+        screen.text('Esperando o host…', cx, BY + 228, { color: 'silver', align: 'center' })
+      }
+    }
+  }
+
+  function ranking() {
+    return ctx.players
+      .map((p) => ({ name: p.name, color: p.color, score: (state && state.scores[p.id]) || 0 }))
+      .sort((a, b) => b.score - a.score)
+  }
+
+  // --- setup screen ---
+
+  function drawSetup() {
+    screen.text('GARTIC', SCREEN_W / 2 + 3, 15, { color: 'black', scale: 5, align: 'center' })
+    screen.text('GARTIC', SCREEN_W / 2, 12, { color: 'cream', scale: 5, align: 'center' })
+    screen.text('Um desenha, os outros adivinham. Cada um desenha uma vez por rodada.', SCREEN_W / 2, 76, {
+      color: 'paper',
+      align: 'center',
+    })
+
+    if (!ctx.me.isHost) {
+      if (blink()) screen.text('Esperando o host começar…', SCREEN_W / 2, 170, { scale: 2, align: 'center' })
+      return
+    }
+
+    const rows = setupRows()
+    const x = 170
+    const w = 300
+    const top = 98
+    const rowH = 18
+    panel(x - 6, top - 6, w + 12, rows.length * rowH + 12)
+
+    rows.forEach((row, i) => {
+      const y = top + i * rowH
+      const selected = i === setup.row
+      const onClick = () => {
+        setup.row = i
+        row.change(1)
+      }
+      clickable(x, y, w, rowH, onClick)
+
+      if (row.start) {
+        button(row.label, x + w / 2 - 60, y + 1, 120, 16, { selected: true })
+        if (selected) screen.text('▶', x + w / 2 - 72, y + 3, { color: 'amber' })
+        return
+      }
+
+      if (selected) screen.rect(x, y, w, rowH, 'slate')
+      if (row.check) {
+        screen.frame(x + 8, y + 4, 10, 10, 'silver')
+        if (row.check()) screen.text('✓', x + 10, y + 1, { color: 'mint' })
+        screen.text(row.label, x + 26, y + 3, { color: row.check() ? 'paper' : 'gray' })
+      } else {
+        screen.text(row.label, x + 8, y + 3, { color: 'paper' })
+        const value = row.value()
+        const adjustable = row.label !== 'Palavras próprias'
+        const right = adjustable ? x + w - 18 : x + w - 8
+        screen.text(value, right, y + 3, { color: 'cream', align: 'right' })
+        if (selected && adjustable) {
+          screen.text('◀', right - screen.measureText(value) - 10, y + 3, { color: 'amber' })
+          screen.text('▶', x + w - 12, y + 3, { color: 'amber' })
+        }
+      }
+    })
+
+    // Custom words editor, under the menu while typing.
+    const editing = isTyping() && typingFor === 'words'
+    const hint = editing
+      ? 'Separe por vírgula. Enter pra confirmar.'
+      : '↑ ↓ escolhe · ◀ ▶ muda · Ⓐ confirma (ou clique)'
+    if (editing) {
+      screen.rect(40, 312, SCREEN_W - 80, 20, 'paper')
+      screen.frame(40, 312, SCREEN_W - 80, 20, 'amber')
+      drawTypedText(setup.customWords, 46, 316, SCREEN_W - 92, true)
+    }
+    screen.text(hint, SCREEN_W / 2, 340, { color: 'silver', align: 'center' })
+  }
 
   // --- start ---
 
-  clearCanvas()
-  showSetup()
+  draw()
   ctx.send('hi', {})
 
   return {
     stop() {
+      cancelAnimationFrame(frame)
       clearInterval(flushTimer)
+      input.destroy()
+      field.remove()
+      screen.destroy()
     },
+  }
+}
+
+// Gartic's desk: dark teal with a dot grid.
+function paintBackground(layer) {
+  layer.clear('deepteal')
+  for (let y = 4; y < SCREEN_H; y += 8) {
+    for (let x = 4; x < SCREEN_W; x += 8) layer.pixel(x, y, 'teal')
   }
 }

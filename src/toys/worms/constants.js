@@ -36,4 +36,3 @@ export const DEFAULT_TURN_TIME = 30
 export const TICK = 1 / 60 // physics step
 export const SEND_EVERY_MS = 50 // host sends state ~20 times per second
 
-export const TEAM_COLORS = ['#e4572e', '#29335c', '#f3a712', '#669bbc', '#4c956c', '#8e5572']
